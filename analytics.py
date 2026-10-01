@@ -1,4 +1,5 @@
 """Cálculos de horas y resúmenes para reportes."""
+from app_config import DAY_SHIFT_END_HOUR, DAY_SHIFT_START_HOUR
 
 
 def shift_metrics(start_time, end_time):
@@ -15,7 +16,7 @@ def shift_metrics(start_time, end_time):
     nighttime_overtime = 0
     for offset in range(overtime_start, duration):
         clock_minute = (start + offset) % (24 * 60)
-        if 6 * 60 <= clock_minute < 22 * 60:
+        if DAY_SHIFT_START_HOUR * 60 <= clock_minute < DAY_SHIFT_END_HOUR * 60:
             daytime_overtime += 1
         else:
             nighttime_overtime += 1

@@ -23,6 +23,8 @@ from app_config import (
     ANALYSIS_PASSWORD,
     AVATAR_COLORS,
     BRANCH_PALETTE,
+    DAY_SHIFT_END_HOUR,
+    DAY_SHIFT_START_HOUR,
     DAYS,
     DB_PATH,
     LEGACY_SHIFTS,
@@ -39,6 +41,7 @@ from app_config import (
     normalize_time,
 )
 from database import Database
+from schedule_export import build_schedule_workbook
 
 # ======================= Interfaz =======================
 def main(page: ft.Page):
@@ -84,6 +87,7 @@ def main(page: ft.Page):
         "fortnight": 1 if today.day <= 15 else 2,
         "export_period": None,
         "export_bytes": None,
+        "export_success_message": "Excel de la quincena guardado correctamente.",
         "analysis_authenticated": False,
     }
 
@@ -91,9 +95,9 @@ def main(page: ft.Page):
     page.title = "Turnos"
     page.padding = 0
     page.spacing = 0
-    page.fonts = {"Ubuntu": "/fonts/Ubuntu-Regular.ttf"}
-    page.theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Ubuntu", use_material3=True)
-    page.dark_theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Ubuntu", use_material3=True)
+    page.fonts = {"Roboto": "/fonts/Roboto-Regular.ttf"}
+    page.theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Roboto", use_material3=True)
+    page.dark_theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Roboto", use_material3=True)
     page.theme_mode = ft.ThemeMode.LIGHT
     page.window.width = 1380
     page.window.height = 880
@@ -272,10 +276,38 @@ def main(page: ft.Page):
         except OSError as exc:
             toast(f"No se pudo guardar el Excel: {exc}")
             return
-        toast("Excel de la quincena guardado correctamente.")
+        toast(state["export_success_message"])
 
     export_picker = ft.FilePicker(on_result=on_export_result)
     page.overlay.append(export_picker)
+
+    def save_export_file(workbook_bytes, file_name, dialog_title, success_message):
+        state["export_bytes"] = workbook_bytes
+        state["export_success_message"] = success_message
+        if page.web:
+            try:
+                export_picker.save_file(
+                    dialog_title=dialog_title,
+                    file_name=file_name,
+                    allowed_extensions=["xlsx"],
+                    src_bytes=workbook_bytes,
+                )
+            except TypeError as exc:
+                if "src_bytes" not in str(exc):
+                    raise
+                payload = base64.b64encode(workbook_bytes).decode("ascii")
+                download_url = (
+                    "data:application/vnd.openxmlformats-officedocument."
+                    f"spreadsheetml.sheet;base64,{payload}"
+                )
+                page.launch_url(download_url)
+            toast("Descarga de la grilla iniciada.")
+        else:
+            export_picker.save_file(
+                dialog_title=dialog_title,
+                file_name=file_name,
+                allowed_extensions=["xlsx"],
+            )
 
     # ---------- editor de celda ----------
     def open_cell_editor(pid, pname, dni, day):
@@ -291,7 +323,7 @@ def main(page: ft.Page):
         branch_id, start_time, end_time = sch.get((pid, day), (None, None, None))
 
         if not assigned:
-            mode = "Sin asignar"
+            mode = "Turno"
         elif branch_id is None:
             mode = "Descanso"
         else:
@@ -301,40 +333,68 @@ def main(page: ft.Page):
             label="Tipo", value=mode, border_radius=10,
             options=[ft.dropdown.Option(x) for x in ("Turno", "Descanso", "Sin asignar")],
         )
-        dd_branch = ft.Dropdown(
-            label="Sucursal", border_radius=10,
-            value=data["branch"][branch_id][0] if branch_id in data["branch"] else data["branches"][0][1],
-            options=[ft.dropdown.Option(b[1]) for b in data["branches"]],
-        )
+        selected_branch = {
+            "id": branch_id if branch_id in data["branch"] else data["branches"][0][0]
+        }
+        branch_chips = []
+
+        def select_branch(selected_id):
+            if dd_mode.value != "Turno":
+                return
+            selected_branch["id"] = selected_id
+            for chip_id, chip in branch_chips:
+                chip.selected = chip_id == selected_id
+                chip.update()
+
+        for current_branch_id, branch_name, branch_color in data["branches"]:
+            chip = ft.Chip(
+                label=ft.Text(branch_name),
+                leading=ft.Container(
+                    width=10, height=10, border_radius=5, bgcolor=branch_color,
+                ),
+                selected=current_branch_id == selected_branch["id"],
+                selected_color=ft.Colors.with_opacity(0.18, branch_color),
+                show_checkmark=True,
+                disabled=mode != "Turno",
+                on_click=lambda e, bid=current_branch_id: select_branch(bid),
+                data=current_branch_id,
+            )
+            branch_chips.append((current_branch_id, chip))
+
+        branch_selection = ft.Column([
+            ft.Text("Sucursal", size=13, weight=ft.FontWeight.W_600),
+            ft.Row([chip for _, chip in branch_chips], wrap=True, spacing=8, run_spacing=6),
+        ], tight=True, spacing=6)
         tf_start = ft.TextField(
-            label="Horario inicio", value=start_time or "08:00", hint_text="08:00",
-            border_radius=10, expand=True,
+            label="Horario inicio", value=start_time or "", hint_text="HH:MM",
+            border_radius=10, expand=True, autofocus=not assigned, disabled=mode != "Turno",
         )
         tf_end = ft.TextField(
-            label="Horario fin", value=end_time or "13:00", hint_text="13:00",
-            border_radius=10, expand=True,
+            label="Horario fin", value=end_time or "", hint_text="HH:MM",
+            border_radius=10, expand=True, disabled=mode != "Turno",
         )
         schedule_row = ft.Row([tf_start, tf_end], spacing=10)
         help_text = ft.Text("Puedes usar un horario que termine al día siguiente, por ejemplo 22:00 – 06:00.",
-                            size=12, color=MUTED)
+                            size=12, color=MUTED, visible=mode == "Turno")
 
         def refresh(_=None):
             working = dd_mode.value == "Turno"
-            dd_branch.disabled = not working
             tf_start.disabled = not working
             tf_end.disabled = not working
+            for _, chip in branch_chips:
+                chip.disabled = not working
             help_text.visible = working
             if _ is not None:
-                dd_branch.update()
                 tf_start.update()
                 tf_end.update()
+                for _, chip in branch_chips:
+                    chip.update()
                 help_text.update()
 
         dd_mode.on_change = refresh
-        refresh()
 
         def clear_errors():
-            for control in (dd_branch, tf_start, tf_end):
+            for control in (tf_start, tf_end):
                 control.error_text = None
 
         def save(e):
@@ -361,7 +421,7 @@ def main(page: ft.Page):
                     dlg.update()
                     return
                 try:
-                    db.set_assignment(week_key(), pid, day, data["branch_id"][dd_branch.value], start, end)
+                    db.set_assignment(week_key(), pid, day, selected_branch["id"], start, end)
                 except ValueError as exc:
                     tf_end.error_text = str(exc)
                     dlg.update()
@@ -379,7 +439,7 @@ def main(page: ft.Page):
                                      ft.Text(f"{DAYS[day]} {day_date.day} {MONTHS[day_date.month - 1]}",
                                              size=12, color=MUTED)], spacing=0)], spacing=12),
             content=ft.Container(
-                ft.Column([dd_mode, dd_branch, schedule_row, help_text], tight=True, spacing=12),
+                ft.Column([dd_mode, schedule_row, branch_selection, help_text], tight=True, spacing=12),
                 width=380,
             ),
             actions=[ft.TextButton("Cancelar", on_click=lambda e: page.close(dlg)),
@@ -579,13 +639,116 @@ def main(page: ft.Page):
             remember_week()
             show()
 
+        def open_schedule_export(e):
+            selected_dates = {"start": monday(), "end": monday() + timedelta(days=6)}
+            start_field = ft.TextField(
+                label="Desde", value=format_date_label(selected_dates["start"].isoformat()),
+                read_only=True, expand=True, border_radius=10,
+            )
+            end_field = ft.TextField(
+                label="Hasta", value=format_date_label(selected_dates["end"].isoformat()),
+                read_only=True, expand=True, border_radius=10,
+            )
+            range_error = ft.Text("", size=12, color=ft.Colors.ERROR)
+
+            def choose_date(key):
+                def selected(event):
+                    value = event.control.value
+                    if value is None:
+                        return
+                    selected_dates[key] = value.date() if hasattr(value, "date") else value
+                    field = start_field if key == "start" else end_field
+                    field.value = format_date_label(selected_dates[key].isoformat())
+                    range_error.value = ""
+                    dialog.update()
+
+                picker = ft.DatePicker(
+                    value=selected_dates[key],
+                    first_date=date(1900, 1, 1),
+                    last_date=date(2100, 12, 31),
+                    help_text="Selecciona la fecha",
+                    confirm_text="Aceptar",
+                    cancel_text="Cancelar",
+                    on_change=selected,
+                )
+                page.open(picker)
+
+            def export_range(event):
+                start_date = selected_dates["start"]
+                end_date = selected_dates["end"]
+                if end_date < start_date:
+                    range_error.value = "La fecha final debe ser igual o posterior a la inicial."
+                    dialog.update()
+                    return
+                people_for_export = [
+                    (pid, person_label(pid, name, dni)) for pid, name, dni in data["people"]
+                ]
+                try:
+                    workbook_bytes = build_schedule_workbook(
+                        start_date,
+                        end_date,
+                        people_for_export,
+                        db.assignments_between(start_date, end_date),
+                        data["branch"],
+                        data["vacations"],
+                    )
+                except (RuntimeError, ValueError) as exc:
+                    range_error.value = str(exc)
+                    dialog.update()
+                    return
+
+                file_name = f"grilla_turnos_{start_date:%Y%m%d}_{end_date:%Y%m%d}.xlsx"
+                page.close(dialog)
+                try:
+                    save_export_file(
+                        workbook_bytes,
+                        file_name,
+                        "Guardar grilla de turnos",
+                        "Grilla de turnos guardada correctamente.",
+                    )
+                except Exception as exc:
+                    toast(f"No se pudo guardar el Excel: {exc}")
+
+            dialog = ft.AlertDialog(
+                modal=True,
+                shape=ft.RoundedRectangleBorder(radius=14),
+                title=ft.Text("Descargar grilla de turnos"),
+                content=ft.Container(
+                    ft.Column([
+                        ft.Text("Selecciona el rango que quieres incluir en el Excel.", size=13, color=MUTED),
+                        ft.Row([
+                            start_field,
+                            ft.IconButton(ft.Icons.CALENDAR_MONTH, tooltip="Elegir fecha inicial",
+                                          on_click=lambda event: choose_date("start")),
+                        ], spacing=4),
+                        ft.Row([
+                            end_field,
+                            ft.IconButton(ft.Icons.CALENDAR_MONTH, tooltip="Elegir fecha final",
+                                          on_click=lambda event: choose_date("end")),
+                        ], spacing=4),
+                        range_error,
+                    ], tight=True, spacing=8),
+                    width=400,
+                ),
+                actions=[
+                    ft.TextButton("Cancelar", on_click=lambda event: page.close(dialog)),
+                    ft.FilledButton("Descargar", icon=ft.Icons.DOWNLOAD_OUTLINED, on_click=export_range),
+                ],
+            )
+            page.open(dialog)
+
+        def week_option(week_start):
+            week_end = week_start + timedelta(days=6)
+            return ft.dropdown.Option(
+                key=week_start.isoformat(),
+                text=f"Sem {week_start.isocalendar().week:02d} · "
+                     f"{week_start.day} {MONTHS[week_start.month - 1]} – "
+                     f"{week_end.day} {MONTHS[week_end.month - 1]}",
+            )
+
         week_select = ft.Dropdown(
             value=week_key(),
-            options=[ft.dropdown.Option(
-                key=w.isoformat(),
-                text=f"Sem {w.isocalendar().week:02d} · {w.day} {MONTHS[w.month - 1]} – "
-                     f"{(w + timedelta(days=6)).day} {MONTHS[(w + timedelta(days=6)).month - 1]}"
-            ) for w in week_options()],
+            options=[week_option(w) for w in week_options()],
             on_change=select_week,
             width=240,
             border_radius=8,
@@ -603,7 +766,10 @@ def main(page: ft.Page):
         top = page_title(
             "Turnos", "Haz clic en una celda para asignar sucursal y horario.",
             ft.TextButton("Hoy", on_click=go_today, visible=monday() != current_monday),
-            week_nav, menu)
+            week_nav,
+            ft.OutlinedButton("Descargar grilla", icon=ft.Icons.DOWNLOAD_OUTLINED,
+                              on_click=open_schedule_export),
+            menu)
 
         grid = surface(
             ft.Column([
@@ -734,7 +900,8 @@ def main(page: ft.Page):
         )
         subtitle = (
             f"{start_date:%d/%m/%Y} al {end_date:%d/%m/%Y} · Extras sobre 8 h por turno · "
-            "HD 06:00–22:00 · HN 22:00–06:00"
+            f"HD {DAY_SHIFT_START_HOUR:02d}:00–{DAY_SHIFT_END_HOUR:02d}:00 · "
+            f"HN {DAY_SHIFT_END_HOUR:02d}:00–{DAY_SHIFT_START_HOUR:02d}:00"
         )
         top = page_title("Análisis", subtitle, month_dropdown, fortnight_dropdown, export_button)
         return ft.Column([

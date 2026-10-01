@@ -9,6 +9,8 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "turnos.db")
 
 DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
 MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+DAY_SHIFT_START_HOUR = 6
+DAY_SHIFT_END_HOUR = 19
 WORK_SCHEDULES = [
     ("06:00", "14:00"),
     ("08:00", "13:00"),
