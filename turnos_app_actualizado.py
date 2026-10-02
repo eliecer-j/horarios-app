@@ -84,6 +84,7 @@ def main(page: ft.Page):
         "section": 0,
         "week_start": stored_week(),
         "schedule_filter": "all",
+        "schedule_scroll_offset": 0,
         "people_search": "",
         "branch_search": "",
         "analysis_month": today.strftime("%Y-%m"),
@@ -417,7 +418,7 @@ def main(page: ft.Page):
             for control in (tf_start, tf_end):
                 control.error_text = None
 
-        def save(e):
+        async def save(e):
             clear_errors()
             if dd_mode.value == "Sin asignar":
                 db.clear_assignment(week_key(), pid, day)
@@ -448,6 +449,9 @@ def main(page: ft.Page):
                     return
             page.close(dlg)
             show()
+            await state["schedule_rows"].scroll_to(
+                offset=state["schedule_scroll_offset"],
+            )
 
         tf_start.on_submit = save
         tf_end.on_submit = save
@@ -587,6 +591,17 @@ def main(page: ft.Page):
                 empty_message = ft.Text("No hay personas que coincidan con este filtro.", color=MUTED)
             rows = [ft.Container(padding=40, alignment=ft.alignment.center, content=empty_message)]
 
+        def remember_schedule_scroll(e):
+            state["schedule_scroll_offset"] = e.pixels
+
+        schedule_rows = ft.Column(
+            rows,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+            spacing=5,
+            on_scroll=remember_schedule_scroll,
+        )
+        state["schedule_rows"] = schedule_rows
 
        
         status = ft.Row([
@@ -806,7 +821,7 @@ def main(page: ft.Page):
                     content=ft.Column([
                         head_row(),
                         ft.Divider(height=1, color=LINE),
-                        ft.Column(rows, scroll=ft.ScrollMode.AUTO, expand=True, spacing=5),
+                        schedule_rows,
                     ], spacing=4, expand=True),
                 )
             ], scroll=ft.ScrollMode.AUTO, expand=True),
