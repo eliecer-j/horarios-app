@@ -83,6 +83,9 @@ def main(page: ft.Page):
     state = {
         "section": 0,
         "week_start": stored_week(),
+        "schedule_filter": "all",
+        "people_search": "",
+        "branch_search": "",
         "analysis_month": today.strftime("%Y-%m"),
         "fortnight": 1 if today.day <= 15 else 2,
         "export_period": None,
@@ -98,11 +101,15 @@ def main(page: ft.Page):
     page.fonts = {"Roboto": "/fonts/Roboto-Regular.ttf"}
     page.theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Roboto", use_material3=True)
     page.dark_theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Roboto", use_material3=True)
-    page.theme_mode = ft.ThemeMode.DARK
+    try:
+        stored_theme = page.client_storage.get("turnos.theme")
+    except Exception:
+        stored_theme = None
+    page.theme_mode = ft.ThemeMode.LIGHT if stored_theme == "light" else ft.ThemeMode.DARK
     page.window.width = 1380
     page.window.height = 880
-    page.window.min_width = 1180
-    page.window.min_height = 700
+    page.window.min_width = 760
+    page.window.min_height = 620
 
     MUTED = ft.Colors.ON_SURFACE_VARIANT
     LINE = ft.Colors.with_opacity(0.55, ft.Colors.OUTLINE_VARIANT)
@@ -174,11 +181,21 @@ def main(page: ft.Page):
         start = start or monday()
         return f"Semana {start.isocalendar().week:02d} · {week_range_label(start)}"
 
+    def content_width():
+        width = page.width or 1380
+        horizontal_padding = 12 if width < 900 else 28
+        return max(320, width - 85 - 2 * horizontal_padding)
+
     def page_title(title, subtitle, *actions):
+        heading = ft.Column([ft.Text(title, size=26, weight=ft.FontWeight.W_700),
+                             ft.Text(subtitle, size=13, color=MUTED)], spacing=2)
+        if actions and page.width and page.width < 1450:
+            return ft.Column([
+                heading,
+                ft.Row(list(actions), width=content_width(), wrap=True, spacing=8, run_spacing=4),
+            ], spacing=8)
         return ft.Row(
-            [ft.Column([ft.Text(title, size=26, weight=ft.FontWeight.W_700),
-                        ft.Text(subtitle, size=13, color=MUTED)], spacing=2),
-             ft.Container(expand=True), *actions],
+            [heading, ft.Container(expand=True), *actions],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
@@ -213,7 +230,10 @@ def main(page: ft.Page):
         ws.merge_cells("A1:F1")
         ws["A1"].font = Font(bold=True, size=14)
         ws["A1"].alignment = Alignment(horizontal="left")
-        ws.append(["Nombre", "Días trabajados", "Trabajadas", "Horas extras", "HD", "HN"])
+        ws.append([
+            "Nombre", "Días trabajados", "Horas trabajadas", "Horas extras",
+            "Horas diurnas", "Horas nocturnas",
+        ])
         for cell in ws[2]:
             cell.fill = header_fill
             cell.font = Font(color="FFFFFF", bold=True)
@@ -453,7 +473,7 @@ def main(page: ft.Page):
         assigned_date = monday() + timedelta(days=day)
         if is_vacation_day(pid, assigned_date):
             return ft.Container(
-                expand=1, height=58, border_radius=10,
+                width=112, height=58, border_radius=10,
                 alignment=ft.alignment.center,
                 bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
                 border=ft.border.all(1, ft.Colors.with_opacity(0.35, ft.Colors.PRIMARY)),
@@ -462,7 +482,7 @@ def main(page: ft.Page):
                                 color=ft.Colors.PRIMARY),
             )
         base = dict(
-            expand=1, height=58, border_radius=10,
+            width=112, height=58, border_radius=10,
             animate_scale=ft.Animation(110, ft.AnimationCurve.EASE_OUT),
             on_hover=hover_scale,
             on_click=lambda e: open_cell_editor(pid, pname, dni, day),
@@ -503,6 +523,7 @@ def main(page: ft.Page):
         current_monday = monday_of(date.today())
         today_idx = date.today().weekday() if monday() == current_monday else None
         people = data["people"]
+        filter_key = state["schedule_filter"]
 
         def head_row():
             start = monday()
@@ -510,7 +531,7 @@ def main(page: ft.Page):
             for i, d in enumerate(DAYS):
                 is_today = i == today_idx
                 cells.append(ft.Container(
-                    expand=1, alignment=ft.alignment.center, padding=ft.padding.symmetric(vertical=4),
+                    width=112, alignment=ft.alignment.center, padding=ft.padding.symmetric(vertical=4),
                     border_radius=8,
                     bgcolor=_pick_color("PRIMARY_CONTAINER", "PRIMARY") if is_today else None,
                     content=ft.Text(f"{d} {(start + timedelta(days=i)).day}", size=12,
@@ -521,6 +542,9 @@ def main(page: ft.Page):
             return ft.Row(cells, spacing=6)
 
         rows = []
+        pending = 0
+        pending_people = 0
+        no_rest = 0
         for pid, pname, dni in people:
             available_days = [
                 d for d in range(7)
@@ -528,7 +552,15 @@ def main(page: ft.Page):
             ]
             assigned = [sch[(pid, d)] for d in available_days if (pid, d) in sch]
             rests = sum(1 for branch_id, _, _ in assigned if branch_id is None)
-            alert = bool(available_days) and len(assigned) == len(available_days) and rests == 0
+            has_pending = len(assigned) < len(available_days)
+            alert = bool(available_days) and not has_pending and rests == 0
+            pending += len(available_days) - len(assigned)
+            pending_people += int(has_pending)
+            no_rest += int(alert)
+            if filter_key == "pending" and not has_pending:
+                continue
+            if filter_key == "no_rest" and not alert:
+                continue
             display_name = person_label(pid, pname, dni)
             badge = ft.Container(
                 width=76, alignment=ft.alignment.center,
@@ -545,36 +577,47 @@ def main(page: ft.Page):
                 + [person_cell(pid, pname, dni, d, sch) for d in range(7)] + [badge], spacing=6))
 
         if not rows:
-            rows = [ft.Container(padding=40, alignment=ft.alignment.center, content=ft.Column(
-                [ft.Icon(ft.Icons.INBOX_OUTLINED, size=36, color=MUTED),
-                 ft.Text("No hay personas todavía.", color=MUTED),
-                 ft.Text("Agrégalas en la sección Personas.", size=12, color=MUTED)],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER))]
+            if not people:
+                empty_message = ft.Column(
+                    [ft.Icon(ft.Icons.INBOX_OUTLINED, size=36, color=MUTED),
+                     ft.Text("No hay personas todavía.", color=MUTED),
+                     ft.Text("Agrégalas en la sección Personas.", size=12, color=MUTED)],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            else:
+                empty_message = ft.Text("No hay personas que coincidan con este filtro.", color=MUTED)
+            rows = [ft.Container(padding=40, alignment=ft.alignment.center, content=empty_message)]
 
-        pending = sum(
-            1 for pid, _, _ in people for d in range(7)
-            if not is_vacation_day(pid, monday() + timedelta(days=d)) and (pid, d) not in sch
+        filter_dropdown = ft.Dropdown(
+            label="Mostrar",
+            value=filter_key,
+            width=190,
+            border_radius=10,
+            options=[
+                ft.dropdown.Option(key="all", text=f"Todas ({len(people)})"),
+                ft.dropdown.Option(key="pending", text=f"Con pendientes ({pending_people})"),
+                ft.dropdown.Option(key="no_rest", text=f"Sin descanso ({no_rest})"),
+            ],
+            on_change=lambda e: set_schedule_filter(e.control.value),
         )
-        no_rest = 0
-        for pid, _, _ in people:
-            available_days = [
-                d for d in range(7)
-                if not is_vacation_day(pid, monday() + timedelta(days=d))
-            ]
-            assigned = [sch[(pid, d)] for d in available_days if (pid, d) in sch]
-            if (available_days and len(assigned) == len(available_days)
-                    and all(branch_id is not None for branch_id, _, _ in assigned)):
-                no_rest += 1
+
+       
         status = ft.Row([
             ft.Row([ft.Icon(ft.Icons.PEOPLE_OUTLINE, size=16, color=MUTED),
-                    ft.Text(f"{len(people)} personas", size=12, color=MUTED)], spacing=6),
+                    ft.Text(f"{len(people)} personas", size=12, color=MUTED)], spacing=6, tight=True),
             ft.Row([ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=16,
                             color=ft.Colors.ERROR if no_rest else MUTED),
                     ft.Text(f"{no_rest} sin descanso", size=12,
-                            color=ft.Colors.ERROR if no_rest else MUTED)], spacing=6),
+                            color=ft.Colors.ERROR if no_rest else MUTED)], spacing=6, tight=True),
             ft.Row([ft.Icon(ft.Icons.EVENT_BUSY_OUTLINED, size=16, color=MUTED),
-                    ft.Text(f"{pending} celdas sin asignar", size=12, color=MUTED)], spacing=6),
-        ], spacing=22)
+                    ft.Text(f"{pending} celdas sin asignar", size=12, color=MUTED)], spacing=6, tight=True),
+        ], width=content_width(), spacing=22, wrap=True, run_spacing=8)
+        summary_legend = ft.Row(
+            [*status.controls],
+            width=content_width(),
+            scroll=ft.ScrollMode.AUTO,
+            spacing=14,
+            height=26,
+        )
 
         # --- acciones de semana ---
         def do_copy():
@@ -591,10 +634,6 @@ def main(page: ft.Page):
         menu = ft.PopupMenuButton(
             icon=ft.Icons.MORE_VERT, tooltip="Acciones de la semana",
             items=[
-                ft.PopupMenuItem(text="Copiar semana anterior", icon=ft.Icons.CONTENT_COPY_OUTLINED,
-                                 on_click=lambda e: confirm("Copiar semana anterior",
-                                                            "Se reemplazarán los turnos de esta semana.",
-                                                            do_copy, "Copiar", danger=False)),
                 ft.PopupMenuItem(text="Vaciar semana", icon=ft.Icons.DELETE_SWEEP_OUTLINED,
                                  on_click=lambda e: confirm("Vaciar semana",
                                                             "Se quitarán todos los turnos de esta semana.",
@@ -742,7 +781,7 @@ def main(page: ft.Page):
             value=week_key(),
             options=[week_option(w) for w in week_options()],
             on_change=select_week,
-            width=240,
+            width=270,
             border_radius=8,
         )
         week_nav = ft.Container(
@@ -753,25 +792,53 @@ def main(page: ft.Page):
                 week_select,
                 ft.IconButton(ft.Icons.CHEVRON_RIGHT, icon_size=20, tooltip="Semana siguiente",
                               on_click=lambda e: go(1)),
-            ], spacing=0))
+            ], spacing=0), width=350)
 
-        top = page_title(
-            "Turnos", "Haz clic en una celda para asignar sucursal y horario.",
+        heading = ft.Row([
+            ft.Text("Turnos", size=22, weight=ft.FontWeight.W_700),
+            ft.Text("Haz clic en una celda para asignar sucursal y horario.",
+                    size=12, color=MUTED),
+        ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        actions = ft.Row(
+            [
             ft.TextButton("Hoy", on_click=go_today, visible=monday() != current_monday),
             week_nav,
+            ft.OutlinedButton("Copiar semana anterior", icon=ft.Icons.CONTENT_COPY_OUTLINED,
+                              on_click=lambda e: confirm("Copiar semana anterior",
+                                                         "Se reemplazarán los turnos de esta semana.",
+                                                         do_copy, "Copiar", danger=False)),
             ft.OutlinedButton("Descargar grilla", icon=ft.Icons.DOWNLOAD_OUTLINED,
                               on_click=open_schedule_export),
-            menu)
+            filter_dropdown,
+            menu,
+            ],
+            width=content_width(),
+            wrap=True,
+            spacing=8,
+            run_spacing=4,
+        )
+        top = ft.Column([heading, actions], spacing=4)
 
+        grid_width = 220 + 7 * 112 + 76 + 8 * 6
         grid = surface(
-            ft.Column([
-                head_row(),
-                ft.Divider(height=1, color=LINE),
-                ft.Column(rows, scroll=ft.ScrollMode.AUTO, expand=True, spacing=5),
-            ], spacing=6, expand=True),
-            expand=True, padding=ft.padding.only(left=12, right=12, top=8, bottom=10))
+            ft.Row([
+                ft.Container(
+                    width=grid_width,
+                    content=ft.Column([
+                        head_row(),
+                        ft.Divider(height=1, color=LINE),
+                        ft.Column(rows, scroll=ft.ScrollMode.AUTO, expand=True, spacing=5),
+                    ], spacing=4, expand=True),
+                )
+            ], scroll=ft.ScrollMode.AUTO, expand=True),
+            expand=True, padding=ft.padding.only(left=12, right=12, top=4, bottom=6))
 
-        return ft.Column([top, status, grid], expand=True, spacing=8)
+        return ft.Column([top, summary_legend, grid], expand=True, spacing=4)
+
+    def set_schedule_filter(value):
+        if value in {"all", "pending", "no_rest"}:
+            state["schedule_filter"] = value
+            show()
 
     # ---------- sección: Análisis ----------
     def build_analysis():
@@ -886,14 +953,16 @@ def main(page: ft.Page):
 
         table = ft.DataTable(
             columns=[ft.DataColumn(ft.Text(label)) for label in
-                     ("Nombre", "Días trabajados", "Trabajadas", "Horas extras", "HD", "HN")],
+                     ("Nombre", "Días trabajados", "Horas trabajadas", "Horas extras",
+                      "Horas diurnas", "Horas nocturnas")],
             rows=rows,
             column_spacing=36,
         )
         subtitle = (
-            f"{start_date:%d/%m/%Y} al {end_date:%d/%m/%Y} · Extras sobre 8 h por turno · "
-            f"HD {DAY_SHIFT_START_HOUR:02d}:00–{DAY_SHIFT_END_HOUR:02d}:00 · "
-            f"HN {DAY_SHIFT_END_HOUR:02d}:00–{DAY_SHIFT_START_HOUR:02d}:00"
+            f"Período: {start_date:%d/%m/%Y} al {end_date:%d/%m/%Y} · "
+            f"Horas extra: sobre 8 h por turno · "
+            f"Diurnas {DAY_SHIFT_START_HOUR:02d}:00–{DAY_SHIFT_END_HOUR:02d}:00 · "
+            f"Nocturnas {DAY_SHIFT_END_HOUR:02d}:00–{DAY_SHIFT_START_HOUR:02d}:00"
         )
         top = page_title("Análisis", subtitle, month_dropdown, fortnight_dropdown, export_button)
         return ft.Column([
@@ -1022,12 +1091,13 @@ def main(page: ft.Page):
 
     def build_people():
         sch = db.week(week_key())
-        items = []
+        entries = []
         for pid, name, dni in data["people"]:
             assigned = [sch[(pid, d)] for d in range(7) if (pid, d) in sch]
             rests = sum(1 for branch_id, _, _ in assigned if branch_id is None)
             worked = len(assigned) - rests
-            weekly = f"Esta semana: {worked} turnos, {rests} descansos" if assigned else "Sin turnos esta semana"
+            period = week_label()
+            weekly = f"{period}: {worked} turnos, {rests} descansos" if assigned else f"{period}: sin turnos"
             identity = f"DNI: {dni}" if dni else "DNI: no registrado"
             vacation = data["vacations"].get(pid)
             details = [ft.Text(f"{identity} · {weekly}", size=12, color=MUTED)]
@@ -1037,7 +1107,7 @@ def main(page: ft.Page):
                 )
                 details.append(ft.Text(vacation_label, size=12, color=ft.Colors.PRIMARY))
             display_name = person_label(pid, name, dni)
-            items.append(ft.Container(
+            card = ft.Container(
                 padding=ft.padding.symmetric(horizontal=14, vertical=10), border_radius=10,
                 content=ft.Row([
                     avatar(pid, name, 38),
@@ -1047,17 +1117,47 @@ def main(page: ft.Page):
                                   on_click=lambda e, p=pid, n=name, d=dni, v=vacation: person_dialog(p, n, d, v)),
                     ft.IconButton(ft.Icons.DELETE_OUTLINE, tooltip="Eliminar", icon_color=ft.Colors.ERROR,
                                   on_click=lambda e, p=pid, n=display_name: delete_person(p, n)),
-                ], vertical_alignment=ft.CrossAxisAlignment.CENTER)))
-            items.append(ft.Divider(height=1, color=LINE))
-        if items:
-            items.pop()
-        else:
-            items = [ft.Container(padding=40, alignment=ft.alignment.center,
-                                  content=ft.Text("Aún no hay personas. Agrega la primera.", color=MUTED))]
+                ], vertical_alignment=ft.CrossAxisAlignment.CENTER))
+            entries.append((f"{name} {dni or ''}".casefold(), card))
+
+        list_view = ft.Column(scroll=ft.ScrollMode.AUTO, spacing=0, expand=True)
+        search = ft.TextField(
+            label="Buscar por nombre o DNI",
+            value=state["people_search"],
+            prefix_icon=ft.Icons.SEARCH,
+            width=260,
+            border_radius=10,
+        )
+
+        def render_people(query, update=False):
+            state["people_search"] = query
+            matching = [card for terms, card in entries if query.casefold() in terms]
+            controls = []
+            for index, card in enumerate(matching):
+                controls.append(card)
+                if index < len(matching) - 1:
+                    controls.append(ft.Divider(height=1, color=LINE))
+            if not matching:
+                message = (
+                    "No hay personas que coincidan con la búsqueda."
+                    if entries else "Aún no hay personas. Agrega la primera."
+                )
+                controls = [ft.Container(
+                    padding=40,
+                    alignment=ft.alignment.center,
+                    content=ft.Text(message, color=MUTED),
+                )]
+            list_view.controls = controls
+            if update:
+                list_view.update()
+
+        search.on_change = lambda e: render_people(e.control.value or "", update=True)
+        render_people(state["people_search"])
         return ft.Column([
             page_title("Personas", f"{len(data['people'])} en el equipo · DNI opcional",
+                       search,
                        ft.FilledButton("Nueva persona", icon=ft.Icons.ADD, on_click=lambda e: person_dialog())),
-            surface(ft.Column(items, scroll=ft.ScrollMode.AUTO, spacing=0), expand=True, padding=6),
+            surface(list_view, expand=True, padding=6),
         ], expand=True, spacing=16)
 
     # ---------- sección: Sucursales ----------
@@ -1119,11 +1219,11 @@ def main(page: ft.Page):
 
     def build_branches():
         sch = db.week(week_key())
-        cards = []
+        entries = []
         for bid, name, color in data["branches"]:
             mine = [(p, d) for (p, d), (b, _, _) in sch.items() if b == bid]
             people_n = len({p for p, _ in mine})
-            cards.append(surface(
+            card = surface(
                 ft.Column([
                     ft.Row([
                         ft.Container(width=40, height=40, border_radius=10, alignment=ft.alignment.center,
@@ -1141,25 +1241,81 @@ def main(page: ft.Page):
                                           on_click=lambda e, b=bid, n=name: delete_branch(b, n))],
                            spacing=0),
                 ], spacing=4),
-                padding=ft.padding.only(left=16, right=8, top=16, bottom=6)))
-        for c in cards:
-            c.width = 290
-        body = ft.Row(cards, wrap=True, spacing=14, run_spacing=14, alignment=ft.MainAxisAlignment.START) if cards \
-            else ft.Container(padding=40, content=ft.Text("Aún no hay sucursales. Agrega la primera.", color=MUTED))
+                padding=ft.padding.only(left=16, right=8, top=16, bottom=6))
+            card.width = 290
+            entries.append((name.casefold(), card))
+
+        branch_grid = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
+        search = ft.TextField(
+            label="Buscar sucursal",
+            value=state["branch_search"],
+            prefix_icon=ft.Icons.SEARCH,
+            width=220,
+            border_radius=10,
+        )
+
+        def render_branches(query, update=False):
+            state["branch_search"] = query
+            matching = [card for terms, card in entries if query.casefold() in terms]
+            if matching:
+                branch_grid.controls = [
+                    ft.Row(matching, wrap=True, spacing=14, run_spacing=14,
+                           alignment=ft.MainAxisAlignment.START)
+                ]
+            else:
+                message = (
+                    "No hay sucursales que coincidan con la búsqueda."
+                    if entries else "Aún no hay sucursales. Agrega la primera."
+                )
+                branch_grid.controls = [
+                    ft.Container(padding=40, content=ft.Text(message, color=MUTED))
+                ]
+            if update:
+                branch_grid.update()
+
+        search.on_change = lambda e: render_branches(e.control.value or "", update=True)
+        render_branches(state["branch_search"])
         return ft.Column([
             page_title("Sucursales", f"{len(data['branches'])} sucursales · conteo de la {week_label()}",
+                       search,
                        ft.FilledButton("Nueva sucursal", icon=ft.Icons.ADD, on_click=lambda e: branch_dialog())),
-            ft.Column([body], scroll=ft.ScrollMode.AUTO, expand=True),
+            branch_grid,
         ], expand=True, spacing=16)
 
     # ---------- navegación y shell ----------
-    main_area = ft.Container(expand=True, padding=ft.padding.only(left=28, right=28, top=22, bottom=22),
+    compact_layout = bool(page.width and page.width < 1450)
+    last_layout_width = page.width or 1380
+    horizontal_padding = 12 if page.width and page.width < 900 else 28
+    main_area = ft.Container(expand=True,
+                             padding=ft.padding.only(left=horizontal_padding, right=horizontal_padding,
+                                                     top=8 if compact_layout else 18,
+                                                     bottom=8 if compact_layout else 18),
                              bgcolor=PAGE_BG)
 
     def show():
         builders = [build_schedule, build_people, build_branches, build_analysis]
         main_area.content = builders[state["section"]]()
         page.update()
+
+    def on_resize(e):
+        nonlocal compact_layout, last_layout_width
+        width = page.width or last_layout_width
+        is_compact = bool(page.width and page.width < 1450)
+        padding = 12 if width < 900 else 28
+        main_area.padding = ft.padding.only(
+            left=padding,
+            right=padding,
+            top=8 if is_compact else 18,
+            bottom=8 if is_compact else 18,
+        )
+        if is_compact != compact_layout or abs(width - last_layout_width) >= 40:
+            compact_layout = is_compact
+            last_layout_width = width
+            show()
+        else:
+            page.update()
+
+    page.on_resized = on_resize
 
     def open_analysis_login():
         password_field = ft.TextField(
@@ -1208,8 +1364,17 @@ def main(page: ft.Page):
         dark = page.theme_mode == ft.ThemeMode.LIGHT
         page.theme_mode = ft.ThemeMode.DARK if dark else ft.ThemeMode.LIGHT
         e.control.icon = ft.Icons.LIGHT_MODE_OUTLINED if dark else ft.Icons.DARK_MODE_OUTLINED
+        try:
+            page.client_storage.set("turnos.theme", "dark" if dark else "light")
+        except Exception as exc:
+            toast(f"No se pudo guardar la preferencia de tema: {exc}")
         page.update()
 
+    theme_toggle_icon = (
+        ft.Icons.LIGHT_MODE_OUTLINED
+        if page.theme_mode == ft.ThemeMode.DARK
+        else ft.Icons.DARK_MODE_OUTLINED
+    )
     rail = ft.NavigationRail(
         selected_index=0, min_width=84, bgcolor=ft.Colors.SURFACE,
         label_type=ft.NavigationRailLabelType.ALL, on_change=on_nav,
@@ -1217,7 +1382,7 @@ def main(page: ft.Page):
             width=42, height=42, border_radius=12, alignment=ft.alignment.center,
             bgcolor=ft.Colors.PRIMARY, content=ft.Icon(ft.Icons.CALENDAR_VIEW_WEEK, color=ft.Colors.ON_PRIMARY))),
         trailing=ft.Container(padding=ft.padding.only(top=24), content=ft.IconButton(
-            ft.Icons.DARK_MODE_OUTLINED, tooltip="Cambiar tema", on_click=toggle_theme)),
+            theme_toggle_icon, tooltip="Cambiar tema", on_click=toggle_theme)),
         destinations=[
             ft.NavigationRailDestination(icon=ft.Icons.CALENDAR_MONTH_OUTLINED,
                                          selected_icon=ft.Icons.CALENDAR_MONTH, label="Turnos"),
