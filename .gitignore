@@ -1,3 +1,5 @@
 __pycache__*
 .venv/*
 turno.db*
+turno.db-shm
+turno.db-wal
