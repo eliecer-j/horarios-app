@@ -587,18 +587,6 @@ def main(page: ft.Page):
                 empty_message = ft.Text("No hay personas que coincidan con este filtro.", color=MUTED)
             rows = [ft.Container(padding=40, alignment=ft.alignment.center, content=empty_message)]
 
-        filter_dropdown = ft.Dropdown(
-            label="Mostrar",
-            value=filter_key,
-            width=190,
-            border_radius=10,
-            options=[
-                ft.dropdown.Option(key="all", text=f"Todas ({len(people)})"),
-                ft.dropdown.Option(key="pending", text=f"Con pendientes ({pending_people})"),
-                ft.dropdown.Option(key="no_rest", text=f"Sin descanso ({no_rest})"),
-            ],
-            on_change=lambda e: set_schedule_filter(e.control.value),
-        )
 
        
         status = ft.Row([
@@ -620,10 +608,6 @@ def main(page: ft.Page):
         )
 
         # --- acciones de semana ---
-        def do_copy():
-            db.copy_week((monday() - timedelta(weeks=1)).isoformat(), week_key())
-            show()
-            toast("Semana copiada desde la anterior.")
 
 
         def do_clear():
@@ -803,13 +787,8 @@ def main(page: ft.Page):
             [
             ft.TextButton("Hoy", on_click=go_today, visible=monday() != current_monday),
             week_nav,
-            ft.OutlinedButton("Copiar semana anterior", icon=ft.Icons.CONTENT_COPY_OUTLINED,
-                              on_click=lambda e: confirm("Copiar semana anterior",
-                                                         "Se reemplazarán los turnos de esta semana.",
-                                                         do_copy, "Copiar", danger=False)),
             ft.OutlinedButton("Descargar grilla", icon=ft.Icons.DOWNLOAD_OUTLINED,
                               on_click=open_schedule_export),
-            filter_dropdown,
             menu,
             ],
             width=content_width(),
@@ -835,10 +814,6 @@ def main(page: ft.Page):
 
         return ft.Column([top, summary_legend, grid], expand=True, spacing=4)
 
-    def set_schedule_filter(value):
-        if value in {"all", "pending", "no_rest"}:
-            state["schedule_filter"] = value
-            show()
 
     # ---------- sección: Análisis ----------
     def build_analysis():

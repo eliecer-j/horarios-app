@@ -337,20 +337,3 @@ class Database:
             self.conn.execute("DELETE FROM assignments WHERE week_start=?", (week_start,))
 
 
-    def copy_week(self, src, dst):
-        source_rows = self.conn.execute(
-            "SELECT person_id, day, branch_id, start_time, end_time "
-            "FROM assignments WHERE week_start=?",
-            (src,),
-        ).fetchall()
-        with self.conn:
-            self.conn.execute("DELETE FROM assignments WHERE week_start=?", (dst,))
-            for row in source_rows:
-                assigned_date = date.fromisoformat(dst) + timedelta(days=row["day"])
-                if self.is_on_vacation(row["person_id"], assigned_date):
-                    continue
-                self.conn.execute(
-                    "INSERT INTO assignments VALUES (?,?,?,?,?,?)",
-                    (dst, row["person_id"], row["day"], row["branch_id"],
-                     row["start_time"], row["end_time"]),
-                )
