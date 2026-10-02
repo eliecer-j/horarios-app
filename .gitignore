@@ -1,5 +1,11 @@
 __pycache__*
 .venv/*
+<<<<<<< HEAD
 turnos.db*
 turnos.db-shm
 turnos.db-wal
+=======
+turno.db*
+turno.db-shm
+turno.db-wal
+>>>>>>> d48e3a97542820cfa0cfa7d883f48052f1ab3cef
