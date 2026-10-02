@@ -582,10 +582,6 @@ def main(page: ft.Page):
             show()
             toast("Semana copiada desde la anterior.")
 
-        def do_auto():
-            db.autogenerate(week_key())
-            show()
-            toast("Semana generada con datos de ejemplo.")
 
         def do_clear():
             db.clear_week(week_key())
@@ -599,10 +595,6 @@ def main(page: ft.Page):
                                  on_click=lambda e: confirm("Copiar semana anterior",
                                                             "Se reemplazarán los turnos de esta semana.",
                                                             do_copy, "Copiar", danger=False)),
-                ft.PopupMenuItem(text="Generar datos de ejemplo", icon=ft.Icons.AUTO_AWESOME_OUTLINED,
-                                 on_click=lambda e: confirm("Generar datos de ejemplo",
-                                                            "Se reemplazarán los turnos de esta semana.",
-                                                            do_auto, "Generar", danger=False)),
                 ft.PopupMenuItem(text="Vaciar semana", icon=ft.Icons.DELETE_SWEEP_OUTLINED,
                                  on_click=lambda e: confirm("Vaciar semana",
                                                             "Se quitarán todos los turnos de esta semana.",

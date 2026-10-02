@@ -336,27 +336,6 @@ class Database:
         with self.conn:
             self.conn.execute("DELETE FROM assignments WHERE week_start=?", (week_start,))
 
-    def autogenerate(self, week_start):
-        rng = random.Random()
-        branch_ids = [branch[0] for branch in self.branches()]
-        rows = []
-        if branch_ids:
-            for pid, _, _ in self.people():
-                rest_days = rng.sample(range(7), 2)
-                home = rng.choice(branch_ids)
-                for day_index in range(7):
-                    assigned_date = date.fromisoformat(week_start) + timedelta(days=day_index)
-                    if self.is_on_vacation(pid, assigned_date):
-                        continue
-                    if day_index in rest_days:
-                        rows.append((week_start, pid, day_index, None, None, None))
-                    else:
-                        branch_id = home if rng.random() < 0.55 else rng.choice(branch_ids)
-                        start_time, end_time = rng.choice(WORK_SCHEDULES)
-                        rows.append((week_start, pid, day_index, branch_id, start_time, end_time))
-        with self.conn:
-            self.conn.execute("DELETE FROM assignments WHERE week_start=?", (week_start,))
-            self.conn.executemany("INSERT INTO assignments VALUES (?,?,?,?,?,?)", rows)
 
     def copy_week(self, src, dst):
         source_rows = self.conn.execute(
