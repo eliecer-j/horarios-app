@@ -98,7 +98,7 @@ def main(page: ft.Page):
     page.fonts = {"Roboto": "/fonts/Roboto-Regular.ttf"}
     page.theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Roboto", use_material3=True)
     page.dark_theme = ft.Theme(color_scheme_seed="#0F766E", font_family="Roboto", use_material3=True)
-    page.theme_mode = ft.ThemeMode.LIGHT
+    page.theme_mode = ft.ThemeMode.DARK
     page.window.width = 1380
     page.window.height = 880
     page.window.min_width = 1180
