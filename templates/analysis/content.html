@@ -1,0 +1,23 @@
+<section class="page-stack">
+  <header class="page-header">
+    <div><p class="eyebrow">Reportes</p><h1>Análisis</h1><p class="muted">Período: {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }} · Horas extra sobre 8 h por turno</p></div>
+    <a class="button button-primary" href="{% url 'analysis_export' %}?month={{ month_value }}&amp;fortnight={{ fortnight }}">Descargar Excel</a>
+  </header>
+  <form class="analysis-toolbar card" method="get" action="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content">
+    <label class="form-field"><span>Mes</span><input class="form-control" type="month" name="month" value="{{ month_value }}"></label>
+    <label class="form-field"><span>Quincena</span><select class="form-control" name="fortnight"><option value="1" {% if fortnight == "1" %}selected{% endif %}>1 al 15</option><option value="2" {% if fortnight == "2" %}selected{% endif %}>16 al {{ end_date|date:'d' }}</option></select></label>
+    <button class="button button-secondary" type="submit">Ver período</button>
+  </form>
+  <div class="schedule-wrap card">
+    <table class="data-table">
+      <thead><tr><th>Nombre</th><th>Días trabajados</th><th>Horas trabajadas</th><th>Horas extra</th><th>Horas diurnas</th><th>Horas nocturnas</th></tr></thead>
+      <tbody>
+      {% for person, metric in people_metrics %}
+        <tr><th>{{ person.display_name }}</th><td>{{ metric.days }}</td><td>{{ metric.worked|floatformat:2 }}</td><td>{{ metric.overtime|floatformat:2 }}</td><td>{{ metric.daytime|floatformat:2 }}</td><td>{{ metric.nighttime|floatformat:2 }}</td></tr>
+      {% endfor %}
+      <tr class="total-row"><th>TOTAL</th><td>{{ totals.days }}</td><td>{{ totals.worked|floatformat:2 }}</td><td>{{ totals.overtime|floatformat:2 }}</td><td>{{ totals.daytime|floatformat:2 }}</td><td>{{ totals.nighttime|floatformat:2 }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="form-hint">Horas diurnas: {{ day_shift_start }}:00–{{ day_shift_end }}:00 · Horas nocturnas: {{ day_shift_end }}:00–{{ day_shift_start }}:00.</p>
+</section>

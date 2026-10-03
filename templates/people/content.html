@@ -1,0 +1,41 @@
+<section class="page-stack">
+  <header class="page-header">
+    <div><p class="eyebrow">Equipo</p><h1>Personas</h1><p class="muted">{{ total_people }} en el equipo · DNI opcional · Vacaciones</p></div>
+    <a class="button button-primary" href="{% url 'people' %}?new=1" hx-get="{% url 'people' %}?new=1" hx-target="#page-content">＋ Nueva persona</a>
+  </header>
+  {% if message %}<div class="notice notice-success" role="status">{{ message }}</div>{% endif %}
+  <form class="search-form" method="get" action="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-trigger="input changed delay:250ms, search">
+    <input class="form-control search-input" type="search" name="q" value="{{ query }}" placeholder="Buscar por nombre o DNI" aria-label="Buscar por nombre o DNI">
+  </form>
+  {% if request.GET.new == "1" or editing or form.errors or editing_person %}
+    <section id="person-form-card" class="card form-card">
+      <div class="section-title"><h2>{% if editing_person %}Editar persona{% else %}Nueva persona{% endif %}</h2><a class="icon-button" href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" aria-label="Cerrar">×</a></div>
+      <form id="person-form" method="post" action="{% url 'people' %}" hx-post="{% url 'people' %}" hx-target="#page-content" hx-swap="innerHTML">
+        {% csrf_token %}
+        {% if editing_person %}<input type="hidden" name="person_id" value="{{ editing_person.pk }}">{% endif %}
+        {% if form.non_field_errors %}<div class="field-errors">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="form-grid">
+          {% for field in form %}
+            <div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}</div>
+          {% endfor %}
+        </div>
+        <p class="form-hint">Al guardar vacaciones, se quitarán los turnos que coincidan con esas fechas.</p>
+        <div class="modal-actions"><a class="button button-ghost" href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar persona</button></div>
+      </form>
+    </section>
+  {% endif %}
+  <section class="card list-card">
+    {% for person in people %}
+      <article class="person-row">
+        <span class="avatar avatar-large">{{ person.name|slice:":1"|upper }}</span>
+        <div class="row-main"><h2>{{ person.display_name }}</h2><p class="muted">DNI: {{ person.dni|default:"no registrado" }} · {{ week_label }}: {{ person.week_work }} turnos, {{ person.week_rest }} descansos</p>
+          {% if person.vacation_start and person.vacation_end %}<p class="vacation-detail">Vacaciones: {{ person.vacation_start|date:'d/m/Y' }} al {{ person.vacation_end|date:'d/m/Y' }}</p>{% endif %}
+        </div>
+        <div class="row-actions">
+          <a class="button button-secondary small-button" href="{% url 'people' %}?edit={{ person.pk }}" hx-get="{% url 'people' %}?edit={{ person.pk }}" hx-target="#page-content">Editar</a>
+          <form method="post" action="{% url 'person_delete' person.pk %}" hx-post="{% url 'person_delete' person.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar a {{ person.display_name }} y todos sus turnos?">{% csrf_token %}<button class="button button-ghost danger-text" type="submit">Eliminar</button></form>
+        </div>
+      </article>
+    {% empty %}<div class="empty-state"><h2>{% if query %}No hay coincidencias{% else %}Aún no hay personas{% endif %}</h2><p>Agrega a la primera persona de tu equipo.</p></div>{% endfor %}
+  </section>
+</section>

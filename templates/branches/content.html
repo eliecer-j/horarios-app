@@ -1,0 +1,33 @@
+<section class="page-stack">
+  <header class="page-header">
+    <div><p class="eyebrow">Organización</p><h1>Sucursales</h1><p class="muted">Conteo de turnos de {{ week_label }}</p></div>
+    <a class="button button-primary" href="{% url 'branches' %}?new=1" hx-get="{% url 'branches' %}?new=1" hx-target="#page-content">＋ Nueva sucursal</a>
+  </header>
+  {% if message %}<div class="notice notice-success" role="status">{{ message }}</div>{% endif %}
+  <form class="search-form" method="get" action="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" hx-trigger="input changed delay:250ms, search">
+    <input class="form-control search-input" type="search" name="q" value="{{ query }}" placeholder="Buscar sucursal" aria-label="Buscar sucursal">
+  </form>
+  {% if request.GET.new == "1" or editing or form.errors or editing_branch %}
+    <section class="card form-card">
+      <div class="section-title"><h2>{% if editing_branch %}Editar sucursal{% else %}Nueva sucursal{% endif %}</h2><a class="icon-button" href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" aria-label="Cerrar">×</a></div>
+      <form method="post" action="{% url 'branches' %}" hx-post="{% url 'branches' %}" hx-target="#page-content" hx-swap="innerHTML">
+        {% csrf_token %}{% if editing_branch %}<input type="hidden" name="branch_id" value="{{ editing_branch.pk }}">{% endif %}
+        {% if form.non_field_errors %}<div class="field-errors">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="form-grid">{% for field in form %}<div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}</div>{% endfor %}</div>
+        <div class="modal-actions"><a class="button button-ghost" href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar sucursal</button></div>
+      </form>
+    </section>
+  {% endif %}
+  <section class="branch-grid">
+    {% for branch in branches %}
+      <article class="card branch-card">
+        <span class="branch-icon" style="--branch-color: {{ branch.color }}">⌂</span>
+        <div class="row-main"><h2>{{ branch.name }}</h2><p class="muted">{{ branch.week_shifts }} turnos · {{ branch.week_people }} personas</p></div>
+        <div class="row-actions">
+          <a class="icon-button" title="Editar" href="{% url 'branches' %}?edit={{ branch.pk }}" hx-get="{% url 'branches' %}?edit={{ branch.pk }}" hx-target="#page-content">✎</a>
+          <form method="post" action="{% url 'branch_delete' branch.pk %}" hx-post="{% url 'branch_delete' branch.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar {{ branch.name }} y sus turnos?">{% csrf_token %}<button class="icon-button danger-text" type="submit" title="Eliminar">×</button></form>
+        </div>
+      </article>
+    {% empty %}<div class="card empty-state"><h2>{% if query %}No hay coincidencias{% else %}Aún no hay sucursales{% endif %}</h2><p>Agrega sucursales para asignar turnos.</p></div>{% endfor %}
+  </section>
+</section>

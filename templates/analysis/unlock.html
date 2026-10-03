@@ -1,0 +1,14 @@
+<section class="unlock-wrap">
+  <div class="card unlock-card">
+    <span class="brand-mark">T</span>
+    <p class="eyebrow">Acceso restringido</p>
+    <h1>Análisis</h1>
+    <p class="muted">Ingresa la contraseña configurada para consultar los reportes.</p>
+    {% if configuration_error %}<div class="notice notice-warning">No está configurada la variable de entorno <code>ANALYSIS_PASSWORD</code>. Configúrala y reinicia Django para habilitar esta sección.</div>{% endif %}
+    <form method="post" action="{% url 'analysis_unlock' %}" hx-post="{% url 'analysis_unlock' %}" hx-target="#page-content" hx-swap="innerHTML">
+      {% csrf_token %}{% if form.non_field_errors %}<div class="field-errors">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="form-field">{{ form.password.label_tag }}{{ form.password }}{% if form.password.errors %}<div class="field-errors">{{ form.password.errors }}</div>{% endif %}</div>
+      <button class="button button-primary full-width" type="submit" {% if configuration_error %}disabled{% endif %}>Ingresar</button>
+    </form>
+  </div>
+</section>

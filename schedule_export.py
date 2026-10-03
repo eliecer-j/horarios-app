@@ -1,8 +1,9 @@
 """Exporta horarios en formato de grilla a Excel."""
-from datetime import timedelta
 from io import BytesIO
 
-from app_config import DAYS
+from datetime import timedelta
+
+DAYS = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
 
 
 def build_schedule_workbook(start_date, end_date, people, assignments, branches, vacations):

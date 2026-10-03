@@ -1,0 +1,71 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Turnos · Gestión semanal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: { extend: { colors: { background: "hsl(var(--background))", foreground: "hsl(var(--foreground))", primary: "hsl(var(--primary))", muted: "hsl(var(--muted))", border: "hsl(var(--border))" } } }
+    };
+  </script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <link rel="stylesheet" href="{% static 'schedule/styles.css' %}">
+</head>
+<body class="bg-background text-foreground antialiased">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a href="{% url 'home' %}" hx-get="{% url 'home' %}" hx-target="#page-content" hx-push-url="true" class="brand">
+        <span class="brand-mark">T</span><span>Turnos</span>
+      </a>
+      <nav class="nav-list" aria-label="Navegación principal">
+        <a href="{% url 'home' %}" hx-get="{% url 'home' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/week/' in current_path or current_path == '/' %}active{% endif %}"><span>▦</span> Turnos</a>
+        <a href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/people/' in current_path %}active{% endif %}"><span>♧</span> Personas</a>
+        <a href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/branches/' in current_path %}active{% endif %}"><span>⌂</span> Sucursales</a>
+        <a href="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/analysis/' in current_path %}active{% endif %}"><span>▤</span> Análisis</a>
+      </nav>
+      <div class="sidebar-footer">
+        <button type="button" class="nav-link theme-toggle" onclick="document.documentElement.classList.toggle('dark'); localStorage.setItem('turnos-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light')"><span>◐</span> Cambiar tema</button>
+      </div>
+    </aside>
+    <main class="main-shell">
+      <div id="page-content">
+        {% include content_template %}
+      </div>
+    </main>
+  </div>
+  <script>
+    if (localStorage.getItem("turnos-theme") === "dark") document.documentElement.classList.add("dark");
+    let preservedPageScroll = 0;
+    let preservedScheduleScroll = 0;
+    document.body.addEventListener("htmx:beforeRequest", function (event) {
+      if (event.detail.target && event.detail.target.id === "page-content") {
+        preservedPageScroll = window.scrollY;
+        preservedScheduleScroll = document.querySelector(".schedule-wrap")?.scrollLeft || 0;
+      }
+    });
+    document.body.addEventListener("htmx:afterSettle", function () {
+      const dialog = document.getElementById("assignment-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+      const personForm = document.getElementById("person-form-card");
+      if (personForm) {
+        personForm.scrollIntoView({block: "start", behavior: "instant"});
+      } else {
+        window.scrollTo(0, preservedPageScroll);
+      }
+      const schedule = document.querySelector(".schedule-wrap");
+      if (schedule) schedule.scrollLeft = preservedScheduleScroll;
+    });
+    document.addEventListener("DOMContentLoaded", function () {
+      const dialog = document.getElementById("assignment-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+      const personForm = document.getElementById("person-form-card");
+      if (personForm) personForm.scrollIntoView({block: "start", behavior: "instant"});
+    });
+  </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
-"""Cálculos de horas y resúmenes para reportes."""
-from app_config import DAY_SHIFT_END_HOUR, DAY_SHIFT_START_HOUR
+DAY_SHIFT_START_HOUR = 6
+DAY_SHIFT_END_HOUR = 19
 
 
 def shift_metrics(start_time, end_time):
@@ -12,8 +12,7 @@ def shift_metrics(start_time, end_time):
 
     overtime_start = min(8 * 60, duration)
     overtime_minutes = max(0, duration - overtime_start)
-    daytime_overtime = 0
-    nighttime_overtime = 0
+    daytime_overtime = nighttime_overtime = 0
     for offset in range(overtime_start, duration):
         clock_minute = (start + offset) % (24 * 60)
         if DAY_SHIFT_START_HOUR * 60 <= clock_minute < DAY_SHIFT_END_HOUR * 60:
@@ -26,19 +25,17 @@ def shift_metrics(start_time, end_time):
 
 def summarize_period(people, assignments):
     summaries = {
-        pid: {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
-        for pid, _, _ in people
+        person.pk: {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
+        for person in people
     }
     totals = {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
-
-    for _, pid, branch_id, start_time, end_time in assignments:
-        if branch_id is None or not start_time or not end_time or pid not in summaries:
+    for _, person_id, branch_id, start_time, end_time in assignments:
+        if branch_id is None or not start_time or not end_time or person_id not in summaries:
             continue
-        summaries[pid]["days"] += 1
+        summaries[person_id]["days"] += 1
         totals["days"] += 1
         metrics = shift_metrics(start_time, end_time)
         for key, value in zip(("worked", "overtime", "daytime", "nighttime"), metrics):
-            summaries[pid][key] += value
+            summaries[person_id][key] += value
             totals[key] += value
-
     return summaries, totals
