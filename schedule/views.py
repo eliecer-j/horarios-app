@@ -1,19 +1,22 @@
 import calendar
 import hmac
 from datetime import date, timedelta
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .exports import fortnight_workbook, workbook_response
-from .forms import AnalysisPasswordForm, AssignmentForm, BranchForm, PersonForm
+from .forms import AnalysisPasswordForm, AssignmentForm, BranchForm, LateArrivalForm, PersonForm
 from .metrics import DAY_SHIFT_END_HOUR, DAY_SHIFT_START_HOUR, summarize_period
-from .models import Branch, Person
+from .models import AssignmentNovelty, Branch, Person
 from .services import (
     assignments_between,
     available_weeks,
@@ -27,12 +30,29 @@ from .services import (
     remove_vacation_assignments,
     save_assignment,
     week_assignments,
+    week_novelties,
 )
 
 
 DAYS = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
 MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 CONTENT_TEMPLATE = "content_template"
+
+
+def _analysis_unlock_redirect(request):
+    query = urlencode({"next": request.get_full_path()})
+    return redirect(f"{reverse('analysis_unlock')}?{query}")
+
+
+def _analysis_next_url(request):
+    candidate = request.POST.get("next") or request.GET.get("next", "")
+    if url_has_allowed_host_and_scheme(
+        candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return candidate
+    return reverse("analysis")
 
 
 def render_screen(request, template, context=None, status=200):
@@ -74,6 +94,7 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
     people = list(Person.objects.all())
     branches = list(Branch.objects.all())
     assignments = week_assignments(week_start)
+    novelties = week_novelties(week_start)
     duplicate_names = name_counts(people)
     today = timezone.localdate()
     days = [
@@ -111,6 +132,7 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
                 {
                     "day": day,
                     "assignment": assignments.get((person.pk, day["index"])),
+                    "novelty": novelties.get((person.pk, day["index"])),
                     "on_vacation": is_on_vacation(person, day["date"]),
                     "branch": next(
                         (branch for branch in branches
@@ -152,6 +174,8 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
         "has_people": bool(people),
         "has_branches": bool(branches),
         "today": today,
+        "week_route": "schedule",
+        "novelties_mode": False,
     }
 
 
@@ -185,6 +209,111 @@ def schedule(request, week_start):
         week_start, edit=edit, form=form,
         filter_key=request.GET.get("filter", "all"),
     )
+    return render_screen(request, "schedule/content.html", context)
+
+
+def novelties(request):
+    week_start = monday_of(timezone.localdate())
+    return novelties_week(request, week_start.isoformat())
+
+
+def novelties_week(request, week_start):
+    if request.session.get("analysis_authenticated") is not True:
+        return _analysis_unlock_redirect(request)
+    week_start = _parse_week(week_start)
+    edit = None
+    form = None
+    edit_value = request.GET.get("edit", "")
+    if edit_value:
+        try:
+            person_id, day = map(int, edit_value.split("-", 1))
+            if day not in range(7) or not Person.objects.filter(pk=person_id).exists():
+                raise ValueError
+            assignment = week_assignments(week_start).get((person_id, day))
+            if assignment and assignment["branch_id"] is not None:
+                edit = (person_id, day)
+                current_novelty = week_novelties(week_start).get(edit)
+                initial = {
+                    "kind": current_novelty["kind"] if current_novelty else AssignmentNovelty.LATE_ARRIVAL,
+                    "actual_start_time": current_novelty["actual_start_time"] if current_novelty else "",
+                    "observation": current_novelty["observation"] if current_novelty else "",
+                }
+                form = LateArrivalForm(
+                    initial=initial,
+                    start_time=assignment["start_time"],
+                    end_time=assignment["end_time"],
+                )
+        except (ValueError, Person.DoesNotExist):
+            raise Http404("La asignación solicitada no existe.")
+    context = _schedule_context(
+        week_start,
+        edit=edit,
+        filter_key=request.GET.get("filter", "all"),
+    )
+    context.update({
+        "novelty_form": form,
+        "novelties_mode": True,
+        "week_route": "novelties_week",
+    })
+    return render_screen(request, "schedule/content.html", context)
+
+
+@require_POST
+def novelty_save(request, week_start, person_id, day):
+    if request.session.get("analysis_authenticated") is not True:
+        return _analysis_unlock_redirect(request)
+    week_start = _parse_week(week_start)
+    if day not in range(7):
+        raise Http404("El día solicitado no es válido.")
+    try:
+        Person.objects.get(pk=person_id)
+    except Person.DoesNotExist as exc:
+        raise Http404("La persona solicitada no existe.") from exc
+    assignment = week_assignments(week_start).get((person_id, day))
+    if not assignment or assignment["branch_id"] is None:
+        raise Http404("Solo se pueden registrar novedades en turnos asignados.")
+    form = LateArrivalForm(
+        request.POST,
+        start_time=assignment["start_time"],
+        end_time=assignment["end_time"],
+    )
+    if form.is_valid():
+        if form.cleaned_data["kind"] == LateArrivalForm.NO_NOVELTY:
+            AssignmentNovelty.objects.filter(
+                week_start=week_start,
+                person_id=person_id,
+                day=day,
+            ).delete()
+            message = "Novedad eliminada."
+        else:
+            AssignmentNovelty.objects.update_or_create(
+                week_start=week_start,
+                person_id=person_id,
+                day=day,
+                defaults={
+                    "kind": form.cleaned_data["kind"],
+                    "actual_start_time": form.cleaned_data["actual_start_time"],
+                    "observation": form.cleaned_data["observation"],
+                },
+            )
+            message = "Novedad guardada."
+        context = _schedule_context(
+            week_start,
+            message=message,
+            filter_key=request.POST.get("filter", "all"),
+        )
+        context.update({"novelties_mode": True, "week_route": "novelties_week"})
+        return render_screen(request, "schedule/content.html", context)
+    context = _schedule_context(
+        week_start,
+        edit=(person_id, day),
+        filter_key=request.POST.get("filter", "all"),
+    )
+    context.update({
+        "novelty_form": form,
+        "novelties_mode": True,
+        "week_route": "novelties_week",
+    })
     return render_screen(request, "schedule/content.html", context)
 
 
@@ -417,8 +546,9 @@ def analysis(request):
 
 
 def analysis_unlock(request):
+    next_url = _analysis_next_url(request)
     if request.session.get("analysis_authenticated") is True:
-        return redirect("analysis")
+        return redirect(next_url)
     form = AnalysisPasswordForm()
     configuration_error = not settings.ANALYSIS_PASSWORD
     if request.method == "POST":
@@ -429,12 +559,15 @@ def analysis_unlock(request):
             form.cleaned_data["password"], settings.ANALYSIS_PASSWORD
         ):
             request.session["analysis_authenticated"] = True
-            return redirect("analysis")
+            if request.headers.get("HX-Request") == "true":
+                return HttpResponse(status=200, headers={"HX-Redirect": next_url})
+            return redirect(next_url)
         else:
             form.add_error("password", "Contraseña incorrecta.")
     return render_screen(request, "analysis/unlock.html", {
         "form": form,
         "configuration_error": configuration_error,
+        "next_url": next_url,
     })
 
 

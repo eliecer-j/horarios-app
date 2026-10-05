@@ -8,6 +8,13 @@ urlpatterns = [
     path("week/<str:week_start>/", views.schedule, name="schedule"),
     path("week/<str:week_start>/assignment/<int:person_id>/<int:day>/", views.assignment_save, name="assignment_save"),
     path("week/<str:week_start>/clear/", views.schedule_clear, name="schedule_clear"),
+    path("novedades/", views.novelties, name="novelties"),
+    path("novedades/<str:week_start>/", views.novelties_week, name="novelties_week"),
+    path(
+        "novedades/<str:week_start>/assignment/<int:person_id>/<int:day>/",
+        views.novelty_save,
+        name="novelty_save",
+    ),
     path("people/", views.people, name="people"),
     path("people/<int:person_id>/delete/", views.person_delete, name="person_delete"),
     path("branches/", views.branches, name="branches"),

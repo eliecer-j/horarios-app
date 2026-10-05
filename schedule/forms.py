@@ -1,7 +1,7 @@
 import re
 
 from django import forms
-from .models import Branch, Person
+from .models import AssignmentNovelty, Branch, Person
 
 
 BRANCH_PALETTE = (
@@ -174,3 +174,73 @@ class AnalysisPasswordForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["password"].widget.attrs["class"] = "form-control"
+
+
+class LateArrivalForm(forms.Form):
+    NO_NOVELTY = ""
+
+    kind = forms.ChoiceField(
+        required=False,
+        choices=(
+            (NO_NOVELTY, "Sin novedad"),
+            *AssignmentNovelty.KIND_CHOICES,
+        ),
+        label="Tipo de novedad",
+        initial=AssignmentNovelty.LATE_ARRIVAL,
+    )
+    actual_start_time = forms.TimeField(
+        required=False,
+        label="Hora real de llegada",
+        input_formats=["%H:%M"],
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "00:00",
+                "maxlength": "5",
+                "inputmode": "numeric",
+                "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+                "title": "Usa el formato de 24 horas HH:MM, por ejemplo 09:30.",
+                "autocomplete": "off",
+                "data-novelty-late-field": "",
+            },
+        ),
+    )
+    observation = forms.CharField(
+        required=False,
+        max_length=1000,
+        label="Observación (opcional)",
+        widget=forms.Textarea(attrs={
+            "class": "form-control",
+            "rows": 3,
+        }),
+    )
+
+    def __init__(self, *args, start_time, end_time, **kwargs):
+        self.start_time = start_time
+        self.end_time = end_time
+        super().__init__(*args, **kwargs)
+        self.fields["kind"].widget.attrs.update({
+            "class": "form-control",
+            "data-novelty-kind-select": "",
+        })
+
+    def clean_actual_start_time(self):
+        if self.cleaned_data.get("kind") != AssignmentNovelty.LATE_ARRIVAL:
+            return None
+        raw_value = self.data.get("actual_start_time", "")
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", raw_value):
+            raise forms.ValidationError("Usa formato HH:MM, por ejemplo 09:30.")
+        actual_time = self.cleaned_data["actual_start_time"]
+        start_minutes = int(self.start_time[:2]) * 60 + int(self.start_time[3:])
+        end_minutes = int(self.end_time[:2]) * 60 + int(self.end_time[3:])
+        actual_minutes = actual_time.hour * 60 + actual_time.minute
+        duration = (end_minutes - start_minutes) % (24 * 60)
+        arrival_offset = (actual_minutes - start_minutes) % (24 * 60)
+        if not 0 < arrival_offset < duration:
+            raise forms.ValidationError(
+                "La hora real debe ser posterior al inicio del turno y anterior a su fin."
+            )
+        return actual_time
+
+    def clean_observation(self):
+        return self.cleaned_data["observation"].strip()

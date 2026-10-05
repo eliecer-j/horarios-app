@@ -29,12 +29,17 @@ def summarize_period(people, assignments):
         for person in people
     }
     totals = {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
-    for _, person_id, branch_id, start_time, end_time in assignments:
+    for assignment in assignments:
+        _, person_id, branch_id, start_time, end_time = assignment[:5]
+        actual_start_time = assignment[5] if len(assignment) > 5 else None
+        novelty_kind = assignment[6] if len(assignment) > 6 else None
         if branch_id is None or not start_time or not end_time or person_id not in summaries:
+            continue
+        if novelty_kind in ("did_not_attend", "calamity"):
             continue
         summaries[person_id]["days"] += 1
         totals["days"] += 1
-        metrics = shift_metrics(start_time, end_time)
+        metrics = shift_metrics(actual_start_time or start_time, end_time)
         for key, value in zip(("worked", "overtime", "daytime", "nighttime"), metrics):
             summaries[person_id][key] += value
             totals[key] += value

@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from django.db import connection, transaction
 
-from .models import Person
+from .models import AssignmentNovelty, Person
 
 
 def monday_of(day):
@@ -26,6 +26,20 @@ def week_assignments(week_start):
         }
 
 
+def week_novelties(week_start):
+    return {
+        (novelty.person_id, novelty.day): {
+            "kind": novelty.kind,
+            "actual_start_time": (
+                novelty.actual_start_time.strftime("%H:%M")
+                if novelty.actual_start_time else ""
+            ),
+            "observation": novelty.observation,
+        }
+        for novelty in AssignmentNovelty.objects.filter(week_start=week_start)
+    }
+
+
 def available_weeks():
     with connection.cursor() as cursor:
         cursor.execute("SELECT DISTINCT week_start FROM assignments ORDER BY week_start")
@@ -47,12 +61,17 @@ def save_assignment(week_start, person_id, day, form):
         raise ValueError("No se pueden asignar turnos durante las vacaciones.")
 
     status = form.cleaned_data["status"]
+    current = week_assignments(week_start).get((person_id, day))
     if status == "unassigned":
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "DELETE FROM assignments WHERE week_start = %s AND person_id = %s AND day = %s",
-                [week_start.isoformat(), person_id, day],
-            )
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM assignments WHERE week_start = %s AND person_id = %s AND day = %s",
+                    [week_start.isoformat(), person_id, day],
+                )
+            AssignmentNovelty.objects.filter(
+                week_start=week_start, person_id=person_id, day=day
+            ).delete()
         return
 
     if status == "rest":
@@ -64,13 +83,25 @@ def save_assignment(week_start, person_id, day, form):
         if start_time == end_time:
             raise ValueError("La hora de inicio y la hora de fin no pueden ser iguales.")
 
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(
-            "INSERT OR REPLACE INTO assignments "
-            "(week_start, person_id, day, branch_id, start_time, end_time) "
-            "VALUES (%s, %s, %s, %s, %s, %s)",
-            [week_start.isoformat(), person_id, day, branch_id, start_time, end_time],
-        )
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT OR REPLACE INTO assignments "
+                "(week_start, person_id, day, branch_id, start_time, end_time) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                [week_start.isoformat(), person_id, day, branch_id, start_time, end_time],
+            )
+        if status == "rest" or (
+            status == "work"
+            and (
+                current is None
+                or current["start_time"] != start_time
+                or current["end_time"] != end_time
+            )
+        ):
+            AssignmentNovelty.objects.filter(
+                week_start=week_start, person_id=person_id, day=day
+            ).delete()
 
 
 def assignments_between(start_date, end_date):
@@ -83,17 +114,38 @@ def assignments_between(start_date, end_date):
             [earliest_week, end_date.isoformat()],
         )
         rows = cursor.fetchall()
+    novelties = {
+        (novelty.week_start, novelty.person_id, novelty.day): (
+            novelty.actual_start_time.strftime("%H:%M")
+            if novelty.actual_start_time else None,
+            novelty.kind,
+            novelty.observation,
+        )
+        for novelty in AssignmentNovelty.objects.filter(
+            week_start__gte=date.fromisoformat(earliest_week),
+            week_start__lte=end_date,
+        )
+    }
     assignments = []
     for week_start, person_id, day, branch_id, start_time, end_time in rows:
         assigned_date = date.fromisoformat(week_start) + timedelta(days=day)
         if start_date <= assigned_date <= end_date:
-            assignments.append((assigned_date, person_id, branch_id, start_time, end_time))
+            actual_start_time, novelty_kind, observation = novelties.get(
+                (date.fromisoformat(week_start), person_id, day),
+                (None, None, ""),
+            )
+            assignments.append((
+                assigned_date, person_id, branch_id, start_time, end_time,
+                actual_start_time, novelty_kind, observation,
+            ))
     return assignments
 
 
 def clear_week(week_start):
-    with connection.cursor() as cursor:
-        cursor.execute("DELETE FROM assignments WHERE week_start = %s", [week_start.isoformat()])
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM assignments WHERE week_start = %s", [week_start.isoformat()])
+        AssignmentNovelty.objects.filter(week_start=week_start).delete()
 
 
 def remove_vacation_assignments(person, start, end):
@@ -112,6 +164,10 @@ def remove_vacation_assignments(person, start, end):
             "DELETE FROM assignments WHERE week_start = %s AND person_id = %s AND day = %s",
             remove_keys,
         )
+    for week_start, person_id, day in remove_keys:
+        AssignmentNovelty.objects.filter(
+            week_start=date.fromisoformat(week_start), person_id=person_id, day=day
+        ).delete()
     return len(remove_keys)
 
 
@@ -135,11 +191,21 @@ def delete_person(person):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM assignments WHERE person_id = %s", [person.pk])
+        AssignmentNovelty.objects.filter(person_id=person.pk).delete()
         person.delete()
 
 
 def delete_branch(branch):
     with transaction.atomic():
         with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT week_start, person_id, day FROM assignments WHERE branch_id = %s",
+                [branch.pk],
+            )
+            assignment_keys = cursor.fetchall()
             cursor.execute("DELETE FROM assignments WHERE branch_id = %s", [branch.pk])
+        for week_start, person_id, day in assignment_keys:
+            AssignmentNovelty.objects.filter(
+                week_start=date.fromisoformat(week_start), person_id=person_id, day=day
+            ).delete()
         branch.delete()

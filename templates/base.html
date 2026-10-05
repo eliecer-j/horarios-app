@@ -23,16 +23,17 @@
         <span class="brand-mark">T</span><span>Turnos</span>
       </a>
       <nav class="nav-list" aria-label="Navegación principal">
-        <a href="{% url 'home' %}" hx-get="{% url 'home' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/week/' in current_path or current_path == '/' %}active{% endif %}"><span>▦</span> Turnos</a>
-        <a href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/people/' in current_path %}active{% endif %}"><span>♧</span> Personas</a>
-        <a href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/branches/' in current_path %}active{% endif %}"><span>⌂</span> Sucursales</a>
-        <a href="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/analysis/' in current_path %}active{% endif %}"><span>▤</span> Análisis</a>
+        <a data-nav-section="schedule" href="{% url 'home' %}" hx-get="{% url 'home' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/week/' in current_path or current_path == '/' %}active{% endif %}"><span>▦</span> Turnos</a>
+        <a data-nav-section="people" href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/people/' in current_path %}active{% endif %}"><span>♧</span> Personas</a>
+        <a data-nav-section="branches" href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/branches/' in current_path %}active{% endif %}"><span>⌂</span> Sucursales</a>
+        <a data-nav-section="analysis" href="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/analysis/' in current_path %}active{% endif %}"><span>▤</span> Análisis</a>
+        <a data-nav-section="novelties" href="{% url 'novelties' %}" hx-get="{% url 'novelties' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/novedades/' in current_path %}active{% endif %}"><span>✦</span> Novedades</a>
       </nav>
       <div class="sidebar-footer">
         <button type="button" class="nav-link theme-toggle" onclick="document.documentElement.classList.toggle('dark'); localStorage.setItem('turnos-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light')"><span>◐</span> Cambiar tema</button>
       </div>
     </aside>
-    <main class="main-shell">
+    <main class="main-shell{% if '/week/' in current_path or '/novedades/' in current_path %} schedule-main-shell{% endif %}">
       <div id="page-content">
         {% include content_template %}
       </div>
@@ -40,6 +41,31 @@
   </div>
   <script>
     if (localStorage.getItem("turnos-theme") === "dark") document.documentElement.classList.add("dark");
+    function updateActiveNavigation() {
+      const path = window.location.pathname;
+      const activeSection = path === "/" || path.startsWith("/week/")
+        ? "schedule"
+        : path.startsWith("/people/")
+          ? "people"
+          : path.startsWith("/branches/")
+            ? "branches"
+            : path.startsWith("/analysis/")
+              ? "analysis"
+              : path.startsWith("/novedades/")
+                ? "novelties"
+              : null;
+
+      document.querySelectorAll("[data-nav-section]").forEach(function (link) {
+        const isActive = link.dataset.navSection === activeSection;
+        link.classList.toggle("active", isActive);
+        if (isActive) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      });
+      document.querySelector(".main-shell").classList.toggle(
+        "schedule-main-shell",
+        activeSection === "schedule" || activeSection === "novelties"
+      );
+    }
     let preservedPageScroll = 0;
     let preservedScheduleScroll = 0;
     document.body.addEventListener("htmx:beforeRequest", function (event) {
@@ -49,6 +75,8 @@
       }
     });
     document.body.addEventListener("htmx:afterSettle", function () {
+      updateActiveNavigation();
+      updateNoveltyFields();
       const dialog = document.getElementById("assignment-dialog");
       if (dialog && !dialog.open) dialog.showModal();
       const personForm = document.getElementById("person-form-card");
@@ -61,11 +89,27 @@
       if (schedule) schedule.scrollLeft = preservedScheduleScroll;
     });
     document.addEventListener("DOMContentLoaded", function () {
+      updateActiveNavigation();
+      updateNoveltyFields();
       const dialog = document.getElementById("assignment-dialog");
       if (dialog && !dialog.open) dialog.showModal();
       const personForm = document.getElementById("person-form-card");
       if (personForm) personForm.scrollIntoView({block: "start", behavior: "instant"});
     });
+    function updateNoveltyFields() {
+      const kind = document.querySelector("[data-novelty-kind-select]");
+      const time = document.querySelector("[data-novelty-late-field]");
+      const group = time && time.closest("[data-novelty-time-group]");
+      if (!kind || !time || !group) return;
+      const isLateArrival = kind.value === "late_arrival";
+      group.hidden = !isLateArrival;
+      time.required = isLateArrival;
+    }
+    document.body.addEventListener("change", function (event) {
+      if (event.target.matches("[data-novelty-kind-select]")) updateNoveltyFields();
+    });
+    window.addEventListener("popstate", updateActiveNavigation);
+    document.body.addEventListener("htmx:historyRestore", updateActiveNavigation);
   </script>
 </body>
 </html>

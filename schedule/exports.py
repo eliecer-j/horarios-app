@@ -53,34 +53,53 @@ def fortnight_workbook(start_date, end_date, people):
     duplicate_names = name_counts(people)
     branches = {branch.pk: branch.name for branch in Branch.objects.all()}
     day_names = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
-    for assigned_date, person_id, branch_id, start_time, end_time in assignments:
+    for assignment in assignments:
+        assigned_date, person_id, branch_id, start_time, end_time = assignment[:5]
+        actual_start_time = assignment[5] if len(assignment) > 5 else None
+        novelty_kind = assignment[6] if len(assignment) > 6 else None
+        observation = assignment[7] if len(assignment) > 7 else ""
         person = people_by_id.get(person_id)
         if person is None:
             continue
         if branch_id is None:
-            row = [person_display_name(person, duplicate_names), f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}", "Descanso", "", "", 0]
+            row = [person_display_name(person, duplicate_names), f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}", "Descanso", "", "", 0, ""]
         else:
-            hours = (int(end_time[:2]) * 60 + int(end_time[3:])) - (
-                int(start_time[:2]) * 60 + int(start_time[3:])
-            )
-            if hours <= 0:
-                hours += 24 * 60
+            effective_start_time = actual_start_time or start_time
+            if novelty_kind in ("did_not_attend", "calamity"):
+                hours = 0
+                if novelty_kind == "did_not_attend":
+                    novelty_label = "No se presentó"
+                else:
+                    novelty_label = "Calamidad"
+                branch_name = f"{branches.get(branch_id, 'Sucursal eliminada')} · {novelty_label}"
+            else:
+                hours = (int(end_time[:2]) * 60 + int(end_time[3:])) - (
+                    int(effective_start_time[:2]) * 60 + int(effective_start_time[3:])
+                )
+                if hours <= 0:
+                    hours += 24 * 60
+                branch_name = branches.get(branch_id, "Sucursal eliminada")
             row = [
                 person_display_name(person, duplicate_names),
                 f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}",
-                branches.get(branch_id, "Sucursal eliminada"),
-                start_time,
+                branch_name,
+                effective_start_time,
                 end_time,
                 hours / 60,
+                observation,
             ]
         sheet.append(row)
         if branch_id is None:
             for cell in sheet[sheet.max_row]:
                 cell.fill = rest_fill
-    for column, width in zip("ABCDEF", (30, 18, 20, 16, 16, 18)):
+    sheet.cell(row=detail_header, column=7, value="Observación")
+    sheet.cell(row=detail_header, column=7).fill = header_fill
+    sheet.cell(row=detail_header, column=7).font = Font(color="FFFFFF", bold=True)
+    sheet.cell(row=detail_header, column=7).alignment = Alignment(horizontal="center")
+    for column, width in zip("ABCDEFG", (30, 18, 30, 16, 16, 18, 36)):
         sheet.column_dimensions[column].width = width
     sheet.freeze_panes = "A3"
-    sheet.auto_filter.ref = f"A{detail_header}:F{sheet.max_row}"
+    sheet.auto_filter.ref = f"A{detail_header}:G{sheet.max_row}"
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()

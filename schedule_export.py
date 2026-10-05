@@ -20,10 +20,10 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
     if len(days) + 2 > 16384:
         raise ValueError("El rango supera el máximo de columnas que admite Excel.")
 
-    assignments_by_day = {
-        (assigned_date, pid): (branch_id, start_time, end_time)
-        for assigned_date, pid, branch_id, start_time, end_time in assignments
-    }
+    assignments_by_day = {}
+    for assignment in assignments:
+        assigned_date, pid, branch_id, start_time, end_time = assignment[:5]
+        assignments_by_day[(assigned_date, pid)] = (branch_id, start_time, end_time)
 
     workbook = Workbook()
     sheet = workbook.active

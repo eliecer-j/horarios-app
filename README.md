@@ -27,7 +27,7 @@ Aplicación web de gestión de horarios migrada a Django, HTMX y SQLite. La inte
 
 ## Base de datos existente
 
-Por defecto, Django se conecta al archivo `turnos.db` de la raíz del proyecto. Las tablas existentes `people`, `branches` y `assignments` se consultan directamente y no son administradas por las migraciones de Django. `migrate` solo crea las tablas propias de Django, como sesiones y autenticación; no vuelve a sembrar ni reemplaza los datos de horarios.
+Por defecto, Django se conecta al archivo `turnos.db` de la raíz del proyecto. Las tablas existentes `people`, `branches` y `assignments` se consultan directamente y no son administradas por las migraciones de Django. Las migraciones crean las tablas propias de Django y la tabla `assignment_novelties`; no vuelven a sembrar ni reemplazan los datos de horarios.
 
 Se puede seleccionar otra base de datos con la variable `DATABASE_PATH`. Antes de probar la migración sobre datos importantes, conserva una copia del archivo SQLite y sus archivos `-wal`/`-shm` si están presentes.
 
@@ -35,7 +35,8 @@ Se puede seleccionar otra base de datos con la variable `DATABASE_PATH`. Antes d
 
 - Navegar semanas, filtrar turnos pendientes y sin descanso y editar asignaciones, descansos o vacaciones.
 - Administrar personas, DNI opcional, sucursales y vacaciones.
+- Registrar en Novedades llegadas tarde, ausencias y calamidades, con observación opcional para estas dos últimas, protegidas por la misma contraseña que Análisis.
 - Descargar grillas por rango de fechas y análisis quincenales en Excel.
-- Consultar reportes de horas trabajadas, extra, diurnas y nocturnas.
+- Consultar reportes de horas trabajadas, extra, diurnas y nocturnas; los turnos con llegada tarde se calculan desde la hora real registrada.
 
 Tailwind y HTMX se cargan desde CDN en las plantillas, por lo que el navegador necesita conexión a Internet para obtener esas dos bibliotecas.

@@ -1,32 +1,38 @@
-<section class="page-stack">
-  <header class="page-header">
+{% load schedule_tags %}
+<section class="page-stack schedule-page">
+  <header class="page-header schedule-page-header">
     <div>
-      <p class="eyebrow">Planificación</p>
-      <h1>Turnos</h1>
-      <p class="muted">Haz clic en una celda para asignar sucursal, horario o descanso.</p>
+      <h1>{% if novelties_mode %}Novedades{% else %}Turnos{% endif %}</h1>
+      <p class="muted schedule-description">{% if novelties_mode %}Registra llegadas tarde y la hora real de llegada.{% else %}Haz clic en una celda para asignar sucursal, horario o descanso.{% endif %}</p>
     </div>
-    <div class="header-actions">
-      <a class="button button-secondary" href="{% url 'schedule_export' %}?start={{ week_start|date:'Y-m-d' }}&amp;end={{ week_end|date:'Y-m-d' }}">Descargar grilla</a>
-      <form method="post" action="{% url 'schedule_clear' week_start|date:'Y-m-d' %}" hx-post="{% url 'schedule_clear' week_start|date:'Y-m-d' %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Quitar todos los turnos de esta semana?">
-        {% csrf_token %}
-        <button class="button button-ghost" type="submit">Vaciar semana</button>
-      </form>
+    
+    <div class="header-actions schedule-header-actions">
+      <a class="button button-secondary small-button" href="{% url 'schedule_export' %}?start={{ week_start|date:'Y-m-d' }}&amp;end={{ week_end|date:'Y-m-d' }}">Descargar grilla</a>
+      {% if not novelties_mode %}
+      <!--
+        <form method="post" action="{% url 'schedule_clear' week_start|date:'Y-m-d' %}" hx-post="{% url 'schedule_clear' week_start|date:'Y-m-d' %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Quitar todos los turnos de esta semana?">
+          {% csrf_token %}
+          <button class="button button-ghost small-button" type="submit">Vaciar semana</button>
+        </form>
+        -->
+      {% endif %}
     </div>
+  
   </header>
 
   {% if message %}<div class="notice notice-success" role="status">{{ message }}</div>{% endif %}
 
-  <section class="week-toolbar card">
-    <a class="icon-button" aria-label="Semana anterior" href="{% url 'schedule' previous_week %}" hx-get="{% url 'schedule' previous_week %}" hx-target="#page-content" hx-push-url="true">←</a>
+  <section class="week-toolbar schedule-week-toolbar card">
+    <a class="icon-button" aria-label="Semana anterior" href="{% url week_route previous_week %}" hx-get="{% url week_route previous_week %}" hx-target="#page-content" hx-push-url="true">←</a>
     <label class="sr-only" for="week-picker">Semana seleccionada</label>
-    <select id="week-picker" class="week-select" onchange="if(this.value) htmx.ajax('GET', '/week/' + this.value + '/', {target:'#page-content', swap:'innerHTML', pushUrl:true})">
+    <select id="week-picker" class="week-select schedule-week-select" onchange="if(this.value) htmx.ajax('GET', '{% if novelties_mode %}/novedades/{% else %}/week/{% endif %}' + this.value + '/', {target:'#page-content', swap:'innerHTML', pushUrl:true})">
       {% for option in week_options %}
         <option value="{{ option|date:'Y-m-d' }}" {% if option == week_start %}selected{% endif %}>Semana {{ option|date:'W' }} · {{ option|date:'d M' }}</option>
       {% endfor %}
     </select>
-    <a class="icon-button" aria-label="Semana siguiente" href="{% url 'schedule' next_week %}" hx-get="{% url 'schedule' next_week %}" hx-target="#page-content" hx-push-url="true">→</a>
+    <a class="icon-button" aria-label="Semana siguiente" href="{% url week_route next_week %}" hx-get="{% url week_route next_week %}" hx-target="#page-content" hx-push-url="true">→</a>
     {% if not is_current_week %}
-      <a class="button button-secondary small-button" href="{% url 'schedule' today_week %}" hx-get="{% url 'schedule' today_week %}" hx-target="#page-content" hx-push-url="true">Hoy</a>
+      <a class="button button-secondary small-button" href="{% url week_route today_week %}" hx-get="{% url week_route today_week %}" hx-target="#page-content" hx-push-url="true">Hoy</a>
     {% endif %}
     <span class="toolbar-spacer"></span>
     <form class="inline-form export-range" method="get" action="{% url 'schedule_export' %}" target="_blank">
@@ -39,20 +45,20 @@
     </form>
   </section>
 
-  <section class="stats-grid" aria-label="Resumen de la semana">
-    <article class="stat-card"><span class="stat-label">Personas</span><strong>{{ people_count }}</strong></article>
-    <article class="stat-card"><span class="stat-label">Sin asignar</span><strong>{{ pending_cells }}</strong><span class="muted">{{ pending_people }} personas</span></article>
-    <article class="stat-card {% if no_rest_count %}stat-warning{% endif %}"><span class="stat-label">Sin descanso</span><strong>{{ no_rest_count }}</strong></article>
+  <section class="stats-strip schedule-stats-strip" aria-label="Resumen de la semana">
+    <div class="stat-item"><span>Personas</span><strong>{{ people_count }}</strong></div>
+    <div class="stat-item"><span>Sin asignar</span><strong>{{ pending_cells }}</strong><span class="stat-detail">{{ pending_people }} personas</span></div>
+    <div class="stat-item {% if no_rest_count %}stat-warning{% endif %}"><span>Sin descanso</span><strong>{{ no_rest_count }}</strong></div>
   </section>
 
-  <nav class="filter-row" aria-label="Filtros de turnos">
-    <a class="filter-chip {% if filter_key == 'all' %}selected{% endif %}" href="{% url 'schedule' week_start|date:'Y-m-d' %}" hx-get="{% url 'schedule' week_start|date:'Y-m-d' %}" hx-target="#page-content" hx-push-url="true">Todas</a>
-    <a class="filter-chip {% if filter_key == 'pending' %}selected{% endif %}" href="{% url 'schedule' week_start|date:'Y-m-d' %}?filter=pending" hx-get="{% url 'schedule' week_start|date:'Y-m-d' %}?filter=pending" hx-target="#page-content" hx-push-url="true">Pendientes</a>
-    <a class="filter-chip {% if filter_key == 'no_rest' %}selected{% endif %}" href="{% url 'schedule' week_start|date:'Y-m-d' %}?filter=no_rest" hx-get="{% url 'schedule' week_start|date:'Y-m-d' %}?filter=no_rest" hx-target="#page-content" hx-push-url="true">Sin descanso</a>
+  <nav class="filter-row schedule-filter-row" aria-label="Filtros de turnos">
+    <a class="filter-chip {% if filter_key == 'all' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}" hx-target="#page-content" hx-push-url="true">Todas</a>
+    <a class="filter-chip {% if filter_key == 'pending' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=pending" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=pending" hx-target="#page-content" hx-push-url="true">Pendientes</a>
+    <a class="filter-chip {% if filter_key == 'no_rest' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest" hx-target="#page-content" hx-push-url="true">Sin descanso</a>
     <span class="muted filter-period">{{ week_label }}</span>
   </nav>
 
-  <div class="schedule-wrap card">
+  <div class="schedule-wrap schedule-grid-scroll card">
     {% if not has_people %}
       <div class="empty-state"><h2>No hay personas todavía</h2><p>Agrega personas antes de planificar los turnos.</p><a class="button button-primary" href="{% url 'people' %}">Ir a Personas</a></div>
     {% else %}
@@ -64,7 +70,7 @@
         <tbody>
         {% for row in rows %}
           <tr>
-            <th scope="row" class="person-name"><span class="avatar">{{ row.person.name|slice:":1"|upper }}</span><span>{{ row.display_name }}</span></th>
+            <th scope="row" class="person-name"><span class="avatar">{{ row.person.name|slice:":1"|upper }}</span><span>{{ row.display_name|capitalize }}</span></th>
             {% for cell in row.cells %}
               <td>
                 {% if cell.on_vacation %}
@@ -72,13 +78,19 @@
                 {% else %}
                   <a class="shift-cell {% if cell.assignment %}{% if cell.assignment.branch_id %}assigned-cell{% else %}rest-cell{% endif %}{% else %}empty-cell{% endif %}"
                     {% if cell.branch %}style="--branch-color: {{ cell.branch.color }}"{% endif %}
-                    href="{% url 'schedule' week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}"
-                    hx-get="{% url 'schedule' week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}"
+                    href="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}"
+                    hx-get="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}"
                     hx-target="#page-content" hx-swap="innerHTML">
                     {% if cell.assignment %}
                       {% if cell.assignment.branch_id %}
                         <strong>{{ cell.branch.name|default:"Sucursal eliminada" }}</strong>
                         <span>{{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
+                        {% if novelties_mode and cell.novelty %}
+                          <span class="novelty-badge">
+                            {% if cell.novelty.kind == 'late_arrival' %}+ Llegada tarde{% elif cell.novelty.kind == 'did_not_attend' %}+ No se presentó{% elif cell.novelty.kind == 'calamity' %}+ Calamidad{% endif %}
+                          </span>
+                          {% if cell.novelty.observation %}<span class="novelty-observation" title="{{ cell.novelty.observation }}">{{ cell.novelty.observation }}</span>{% endif %}
+                        {% endif %}
                       {% else %}<strong>Descanso</strong><span>Libre</span>{% endif %}
                     {% else %}<span class="add-mark">+</span>{% endif %}
                   </a>
@@ -97,21 +109,38 @@
 
   {% if edit_person %}
     <dialog id="assignment-dialog" class="modal card" aria-labelledby="assignment-title">
-        <div class="modal-header"><div><p class="eyebrow">{{ edit_day_name }} {{ edit_date|date:'d/m/Y' }}</p><h2 id="assignment-title">{{ edit_person.name }}</h2></div><a class="icon-button" href="{% url 'schedule' week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-get="{% url 'schedule' week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-target="#page-content" hx-swap="innerHTML" aria-label="Cerrar">×</a></div>
-        {% if not has_branches %}<div class="notice notice-warning">Crea una sucursal antes de asignar un turno.</div>{% endif %}
-        <form method="post" action="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-post="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-target="#page-content" hx-swap="innerHTML">
-          {% csrf_token %}
-          {% if edit_form.non_field_errors %}<div class="field-errors">{{ edit_form.non_field_errors }}</div>{% endif %}
-          <div class="form-grid">
-            {% for field in edit_form %}
-              <div class="form-field {% if field.name == 'branch' or field.name == 'status' %}wide-field{% endif %}">
-                {{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
-              </div>
-            {% endfor %}
-          </div>
-          <p class="form-hint">Formato de 24 horas HH:MM; por ejemplo 12:00–17:00. También puedes indicar un turno nocturno, como 22:00–06:00.</p>
-          <div class="modal-actions"><a class="button button-ghost" href="{% url 'schedule' week_start|date:'Y-m-d' %}" hx-get="{% url 'schedule' week_start|date:'Y-m-d' %}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar turno</button></div>
-        </form>
+        <div class="modal-header"><div><p class="eyebrow">{{ edit_day_name }} {{ edit_date|date:'d/m/Y' }}</p><h2 id="assignment-title">{{ edit_person.name }}</h2></div><a class="icon-button" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-target="#page-content" hx-swap="innerHTML" aria-label="Cerrar">×</a></div>
+        {% if novelties_mode %}
+          <form method="post" action="{% url 'novelty_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-post="{% url 'novelty_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-target="#page-content" hx-swap="innerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="filter" value="{{ filter_key }}">
+            {% if novelty_form.non_field_errors %}<div class="field-errors">{{ novelty_form.non_field_errors }}</div>{% endif %}
+            <div class="form-grid">
+              {% for field in novelty_form %}
+                <div class="form-field wide-field" {% if field.name == 'actual_start_time' %}data-novelty-time-group{% endif %}>
+                  {{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
+                </div>
+              {% endfor %}
+            </div>
+            <p class="form-hint">La hora solo se solicita para una llegada tarde. “No se presentó” y “Calamidad” se registran con 0 horas. La observación es opcional.</p>
+            <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar novedad</button></div>
+          </form>
+        {% else %}
+          {% if not has_branches %}<div class="notice notice-warning">Crea una sucursal antes de asignar un turno.</div>{% endif %}
+          <form method="post" action="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-post="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-target="#page-content" hx-swap="innerHTML">
+            {% csrf_token %}
+            {% if edit_form.non_field_errors %}<div class="field-errors">{{ edit_form.non_field_errors }}</div>{% endif %}
+            <div class="form-grid">
+              {% for field in edit_form %}
+                <div class="form-field {% if field.name == 'branch' or field.name == 'status' %}wide-field{% endif %}">
+                  {{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
+                </div>
+              {% endfor %}
+            </div>
+            <p class="form-hint">Formato de 24 horas HH:MM; por ejemplo 12:00–17:00. También puedes indicar un turno nocturno, como 22:00–06:00.</p>
+            <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar turno</button></div>
+          </form>
+        {% endif %}
     </dialog>
   {% endif %}
 </section>
