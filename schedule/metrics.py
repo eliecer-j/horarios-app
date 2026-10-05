@@ -24,23 +24,50 @@ def shift_metrics(start_time, end_time):
 
 
 def summarize_period(people, assignments):
-    summaries = {
-        person.pk: {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
+    period_minutes = {
+        person.pk: {
+            "days": 0,
+            "worked": 0,
+            "daytime_overtime": 0,
+            "nighttime_overtime": 0,
+        }
         for person in people
     }
-    totals = {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
     for assignment in assignments:
         _, person_id, branch_id, start_time, end_time = assignment[:5]
         actual_start_time = assignment[5] if len(assignment) > 5 else None
         novelty_kind = assignment[6] if len(assignment) > 6 else None
-        if branch_id is None or not start_time or not end_time or person_id not in summaries:
+        if branch_id is None or not start_time or not end_time or person_id not in period_minutes:
             continue
         if novelty_kind in ("did_not_attend", "calamity"):
             continue
-        summaries[person_id]["days"] += 1
-        totals["days"] += 1
+        person_minutes = period_minutes[person_id]
+        person_minutes["days"] += 1
         metrics = shift_metrics(actual_start_time or start_time, end_time)
-        for key, value in zip(("worked", "overtime", "daytime", "nighttime"), metrics):
-            summaries[person_id][key] += value
+        person_minutes["worked"] += round(metrics[0] * 60)
+        person_minutes["daytime_overtime"] += round(metrics[2] * 60)
+        person_minutes["nighttime_overtime"] += round(metrics[3] * 60)
+
+    summaries = {}
+    totals = {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
+    for person_id, values in period_minutes.items():
+        gross_daytime = values["daytime_overtime"]
+        gross_nighttime = values["nighttime_overtime"]
+        gross_overtime = gross_daytime + gross_nighttime
+        net_overtime = max(0, values["worked"] - values["days"] * 8 * 60)
+        if gross_overtime:
+            daytime_overtime = round(net_overtime * gross_daytime / gross_overtime)
+        else:
+            daytime_overtime = 0
+        nighttime_overtime = net_overtime - daytime_overtime
+        summary = {
+            "days": values["days"],
+            "worked": values["worked"] / 60,
+            "overtime": net_overtime / 60,
+            "daytime": daytime_overtime / 60,
+            "nighttime": nighttime_overtime / 60,
+        }
+        summaries[person_id] = summary
+        for key, value in summary.items():
             totals[key] += value
     return summaries, totals

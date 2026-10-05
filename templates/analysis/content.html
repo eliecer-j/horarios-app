@@ -1,6 +1,6 @@
 <section class="page-stack">
   <header class="page-header">
-    <div><p class="eyebrow">Reportes</p><h1>Análisis</h1><p class="muted">Período: {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }} · Horas extra sobre 8 h por turno</p></div>
+    <div><p class="eyebrow">Reportes</p><h1>Análisis</h1><p class="muted">Período: {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }} · Horas extra netas sobre 8 h por día trabajado</p></div>
     <a class="button button-primary" href="{% url 'analysis_export' %}?month={{ month_value }}&amp;fortnight={{ fortnight }}">Descargar Excel</a>
   </header>
   <form class="analysis-toolbar card" method="get" action="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content">

@@ -7,7 +7,7 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from .forms import AssignmentForm, LateArrivalForm
-from .metrics import shift_metrics
+from .metrics import shift_metrics, summarize_period
 from .models import AssignmentNovelty, Branch, Person
 from .services import assignments_between, monday_of
 from .templatetags.schedule_tags import capitalize
@@ -447,6 +447,90 @@ class LegacyDatabaseViewsTests(TestCase):
 
     def test_overnight_shift_metrics(self):
         self.assertEqual(shift_metrics("22:00", "06:00"), (8.0, 0.0, 0.0, 0.0))
+
+    def test_analysis_nets_overtime_against_shorter_workdays(self):
+        shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO assignments VALUES (%s, %s, %s, %s, '08:00', %s)",
+                [
+                    (self.week_start.isoformat(), self.person.pk, day, self.branch.pk, end_time)
+                    for day, end_time in enumerate(shift_end_times)
+                ],
+            )
+
+        assignments = assignments_between(
+            self.week_start, self.week_start + timedelta(days=6)
+        )
+        summaries, totals = summarize_period([self.person], assignments)
+        metric = summaries[self.person.pk]
+
+        self.assertEqual(metric["days"], 7)
+        self.assertAlmostEqual(metric["worked"], 3379 / 60)
+        self.assertAlmostEqual(metric["overtime"], 19 / 60)
+        self.assertAlmostEqual(metric["daytime"], 19 / 60)
+        self.assertEqual(metric["nighttime"], 0)
+        self.assertAlmostEqual(totals["overtime"], 19 / 60)
+
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+        month = self.week_start.strftime("%Y-%m")
+        fortnight = "1" if self.week_start.day <= 15 else "2"
+        response = self.client.get(
+            reverse("analysis"),
+            {"month": month, "fortnight": fortnight},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertAlmostEqual(
+            response.context["summaries"][self.person.pk]["overtime"],
+            19 / 60,
+        )
+
+        workbook_response = self.client.get(
+            reverse("analysis_export"),
+            {"month": month, "fortnight": fortnight},
+        )
+        workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
+        self.assertAlmostEqual(workbook.active["C3"].value, 3379 / 60)
+        self.assertAlmostEqual(workbook.active["D3"].value, 19 / 60)
+        self.assertAlmostEqual(workbook.active["E3"].value, 19 / 60)
+        self.assertEqual(workbook.active["F3"].value, 0)
+
+    def test_absence_and_calamity_reduce_overtime_and_daily_quota(self):
+        shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO assignments VALUES (%s, %s, %s, %s, '08:00', %s)",
+                [
+                    (self.week_start.isoformat(), self.person.pk, day, self.branch.pk, end_time)
+                    for day, end_time in enumerate(shift_end_times)
+                ],
+            )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            kind=AssignmentNovelty.DID_NOT_ATTEND,
+        )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=4,
+            kind=AssignmentNovelty.CALAMITY,
+        )
+
+        assignments = assignments_between(
+            self.week_start, self.week_start + timedelta(days=6)
+        )
+        summaries, _ = summarize_period([self.person], assignments)
+        metric = summaries[self.person.pk]
+
+        self.assertEqual(metric["days"], 5)
+        self.assertAlmostEqual(metric["worked"], 2523 / 60)
+        self.assertAlmostEqual(metric["overtime"], 123 / 60)
+        self.assertAlmostEqual(metric["daytime"], 123 / 60)
+        self.assertEqual(metric["nighttime"], 0)
 
 
 class WeekDateTests(TestCase):
