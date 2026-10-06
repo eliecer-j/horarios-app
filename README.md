@@ -20,7 +20,9 @@ Aplicación web de gestión de horarios migrada a Django, HTMX y SQLite. La inte
 
    ```powershell
    .\.venv\Scripts\python.exe manage.py migrate
-   .\.venv\Scripts\python.exe manage.py runserver
+   python manage.py collectstatic
+
+   waitress-serve --listen=0.0.0.0:8000 horarios_project.wsgi:application 
    ```
 
 4. Abre <http://127.0.0.1:8000/>.
