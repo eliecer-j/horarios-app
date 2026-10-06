@@ -1,5 +1,5 @@
 {% load schedule_tags %}
-<section class="page-stack schedule-page">
+<section class="page-stack schedule-page{% if novelties_mode %} novelties-mode{% else %} shifts-mode{% endif %}">
   <header class="page-header schedule-page-header">
     <div>
       <h1>{% if novelties_mode %}Novedades{% else %}Turnos{% endif %}</h1>
@@ -19,6 +19,19 @@
     </div>
   
   </header>
+
+  <section class="schedule-mode-banner" aria-label="{% if novelties_mode %}Modo Novedades{% else %}Modo Turnos{% endif %}">
+    <span class="schedule-mode-icon" aria-hidden="true">{% if novelties_mode %}✦{% else %}▦{% endif %}</span>
+    <div class="schedule-mode-copy">
+      <strong>{% if novelties_mode %}MODO NOVEDADES{% else %}MODO TURNOS{% endif %}</strong>
+      <span>{% if novelties_mode %}Registra incidencias y consulta el historial sin modificar los horarios.{% else %}Planifica sucursales, horarios y descansos.{% endif %}</span>
+    </div>
+    {% if novelties_mode %}
+      <a class="schedule-mode-link" href="{% url 'schedule' week_start|date:'Y-m-d' %}" hx-get="{% url 'schedule' week_start|date:'Y-m-d' %}" hx-target="#page-content" hx-push-url="true">Ir a Turnos <span aria-hidden="true">→</span></a>
+    {% else %}
+      <a class="schedule-mode-link" href="{% url 'novelties_week' week_start|date:'Y-m-d' %}" hx-get="{% url 'novelties_week' week_start|date:'Y-m-d' %}" hx-target="#page-content" hx-push-url="true">Ir a Novedades <span aria-hidden="true">→</span></a>
+    {% endif %}
+  </section>
 
   {% if message %}<div class="notice notice-success" role="status">{{ message }}</div>{% endif %}
 
@@ -46,9 +59,15 @@
   </section>
 
   <section class="stats-strip schedule-stats-strip" aria-label="Resumen de la semana">
-    <div class="stat-item"><span>Personas</span><strong>{{ people_count }}</strong></div>
-    <div class="stat-item"><span>Sin asignar</span><strong>{{ pending_cells }}</strong><span class="stat-detail">{{ pending_people }} personas</span></div>
-    <div class="stat-item {% if no_rest_count %}stat-warning{% endif %}"><span>Sin descanso</span><strong>{{ no_rest_count }}</strong></div>
+    {% if novelties_mode %}
+      <div class="stat-item"><span>Turnos programados</span><strong>{{ assigned_shifts_count }}</strong></div>
+      <div class="stat-item"><span>Novedades activas</span><strong>{{ active_novelties_count }}</strong></div>
+      <div class="stat-item"><span>En historial</span><strong>{{ historical_novelties_count }}</strong></div>
+    {% else %}
+      <div class="stat-item"><span>Personas</span><strong>{{ people_count }}</strong></div>
+      <div class="stat-item"><span>Sin asignar</span><strong>{{ pending_cells }}</strong><span class="stat-detail">{{ pending_people }} personas</span></div>
+      <div class="stat-item {% if no_rest_count %}stat-warning{% endif %}"><span>Sin descanso</span><strong>{{ no_rest_count }}</strong></div>
+    {% endif %}
   </section>
 
   <nav class="filter-row schedule-filter-row" aria-label="Filtros de turnos">
@@ -83,17 +102,46 @@
                     hx-target="#page-content" hx-swap="innerHTML">
                     {% if cell.assignment %}
                       {% if cell.assignment.branch_id %}
-                        <strong>{{ cell.branch.name|default:"Sucursal eliminada" }}</strong>
-                        <span>{{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
-                        {% if novelties_mode and cell.novelty %}
-                          <span class="novelty-badge">
-                            {% if cell.novelty.kind == 'late_arrival' %}+ Llegada tarde{% elif cell.novelty.kind == 'did_not_attend' %}+ No se presentó{% elif cell.novelty.kind == 'calamity' %}+ Calamidad{% endif %}
-                          </span>
-                          {% if cell.novelty.observation %}<span class="novelty-observation" title="{{ cell.novelty.observation }}">{{ cell.novelty.observation }}</span>{% endif %}
+                        {% if novelties_mode %}
+                          <span class="novelty-shift-context">{{ cell.branch.name|default:"Sucursal eliminada" }} · {{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
+                          {% if cell.novelty %}
+                            <span class="novelty-badge">
+                              {% if cell.novelty.kind == 'late_arrival' %}Llegada tarde{% elif cell.novelty.kind == 'did_not_attend' %}No se presentó{% elif cell.novelty.kind == 'calamity' %}Calamidad{% endif %}
+                            </span>
+                            {% if cell.novelty.observation %}<span class="novelty-observation" title="{{ cell.novelty.observation }}">{{ cell.novelty.observation }}</span>{% endif %}
+                          {% else %}
+                            <span class="novelty-empty-prompt">＋ Registrar novedad</span>
+                          {% endif %}
+                        {% else %}
+                          <strong>{{ cell.branch.name|default:"Sucursal eliminada" }}</strong>
+                          <span>{{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
                         {% endif %}
                       {% else %}<strong>Descanso</strong><span>Libre</span>{% endif %}
                     {% else %}<span class="add-mark">+</span>{% endif %}
                   </a>
+                {% endif %}
+                {% if novelties_mode and cell.historical_novelties %}
+                  <div class="novelty-history" aria-label="Historial de novedades">
+                    {% for historical in cell.historical_novelties %}
+                      <div class="novelty-history-item">
+                        <span class="novelty-badge novelty-badge-historical">
+                          Histórico · {% if historical.kind == 'late_arrival' %}Llegada tarde{% elif historical.kind == 'did_not_attend' %}No se presentó{% elif historical.kind == 'calamity' %}Calamidad{% endif %}
+                        </span>
+                        {% if historical.actual_start_time %}<span class="novelty-observation">Llegada: {{ historical.actual_start_time }}</span>{% endif %}
+                        {% if historical.observation %}<span class="novelty-observation" title="{{ historical.observation }}">{{ historical.observation }}</span>{% endif %}
+                        <span class="novelty-history-date">Cancelada {{ historical.archived_at|date:'d/m/Y H:i' }}</span>
+                      </div>
+                    {% endfor %}
+                    <form method="post"
+                      action="{% url 'novelty_history_delete' week_start|date:'Y-m-d' row.person.pk cell.day.index %}"
+                      hx-post="{% url 'novelty_history_delete' week_start|date:'Y-m-d' row.person.pk cell.day.index %}"
+                      hx-target="#page-content" hx-swap="innerHTML"
+                      hx-confirm="¿Borrar todo el historial de novedades de esta celda?">
+                      {% csrf_token %}
+                      <input type="hidden" name="filter" value="{{ filter_key }}">
+                      <button class="button button-ghost small-button novelty-history-delete" type="submit">Borrar historial</button>
+                    </form>
+                  </div>
                 {% endif %}
               </td>
             {% endfor %}

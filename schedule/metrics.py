@@ -23,49 +23,71 @@ def shift_metrics(start_time, end_time):
     return duration / 60, overtime_minutes / 60, daytime_overtime / 60, nighttime_overtime / 60
 
 
-def summarize_period(people, assignments):
+def assignment_period_metrics(people, assignments):
+    person_rows = {}
+    for index, assignment in enumerate(assignments):
+        _, person_id, branch_id, start_time, end_time = assignment[:5]
+        actual_start_time = assignment[5] if len(assignment) > 5 else None
+        novelty_kind = assignment[6] if len(assignment) > 6 else None
+        if branch_id is None or not start_time or not end_time:
+            continue
+        if novelty_kind in ("did_not_attend", "calamity"):
+            continue
+        metrics = shift_metrics(actual_start_time or start_time, end_time)
+        person_rows.setdefault(person_id, []).append({
+            "index": index,
+            "worked": round(metrics[0] * 60),
+            "daytime_gross": round(metrics[2] * 60),
+            "nighttime_gross": round(metrics[3] * 60),
+            "daytime_shortfall": max(0, 8 * 60 - round(metrics[0] * 60)),
+        })
+
+    daily_metrics = {}
+    people_by_id = {person.pk: person for person in people}
+    for person_id, rows in person_rows.items():
+        if person_id not in people_by_id:
+            continue
+        for row in rows:
+            daytime = row["daytime_gross"] - row["daytime_shortfall"]
+            nighttime = row["nighttime_gross"]
+            daily_metrics[row["index"]] = {
+                "worked": row["worked"],
+                "overtime": daytime + nighttime,
+                "daytime": daytime,
+                "nighttime": nighttime,
+            }
+    return daily_metrics
+
+
+def summarize_period(people, assignments, daily_metrics=None):
+    if daily_metrics is None:
+        daily_metrics = assignment_period_metrics(people, assignments)
     period_minutes = {
         person.pk: {
             "days": 0,
             "worked": 0,
-            "daytime_overtime": 0,
-            "nighttime_overtime": 0,
+            "overtime": 0,
+            "daytime": 0,
+            "nighttime": 0,
         }
         for person in people
     }
-    for assignment in assignments:
-        _, person_id, branch_id, start_time, end_time = assignment[:5]
-        actual_start_time = assignment[5] if len(assignment) > 5 else None
-        novelty_kind = assignment[6] if len(assignment) > 6 else None
-        if branch_id is None or not start_time or not end_time or person_id not in period_minutes:
-            continue
-        if novelty_kind in ("did_not_attend", "calamity"):
-            continue
+    for index, metrics in daily_metrics.items():
+        person_id = assignments[index][1]
         person_minutes = period_minutes[person_id]
         person_minutes["days"] += 1
-        metrics = shift_metrics(actual_start_time or start_time, end_time)
-        person_minutes["worked"] += round(metrics[0] * 60)
-        person_minutes["daytime_overtime"] += round(metrics[2] * 60)
-        person_minutes["nighttime_overtime"] += round(metrics[3] * 60)
+        for key in ("worked", "overtime", "daytime", "nighttime"):
+            person_minutes[key] += metrics[key]
 
     summaries = {}
     totals = {"days": 0, "worked": 0.0, "overtime": 0.0, "daytime": 0.0, "nighttime": 0.0}
     for person_id, values in period_minutes.items():
-        gross_daytime = values["daytime_overtime"]
-        gross_nighttime = values["nighttime_overtime"]
-        gross_overtime = gross_daytime + gross_nighttime
-        net_overtime = max(0, values["worked"] - values["days"] * 8 * 60)
-        if gross_overtime:
-            daytime_overtime = round(net_overtime * gross_daytime / gross_overtime)
-        else:
-            daytime_overtime = 0
-        nighttime_overtime = net_overtime - daytime_overtime
         summary = {
             "days": values["days"],
             "worked": values["worked"] / 60,
-            "overtime": net_overtime / 60,
-            "daytime": daytime_overtime / 60,
-            "nighttime": nighttime_overtime / 60,
+            "overtime": values["overtime"] / 60,
+            "daytime": values["daytime"] / 60,
+            "nighttime": values["nighttime"] / 60,
         }
         summaries[person_id] = summary
         for key, value in summary.items():

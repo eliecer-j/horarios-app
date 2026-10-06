@@ -4,14 +4,15 @@ from django.http import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from .metrics import summarize_period
+from .metrics import assignment_period_metrics, summarize_period
 from .models import Branch
 from .services import assignments_between, name_counts, person_display_name
 
 
 def fortnight_workbook(start_date, end_date, people):
     assignments = assignments_between(start_date, end_date)
-    summaries, totals = summarize_period(people, assignments)
+    daily_metrics = assignment_period_metrics(people, assignments)
+    summaries, totals = summarize_period(people, assignments, daily_metrics)
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Quincena"
@@ -42,7 +43,10 @@ def fortnight_workbook(start_date, end_date, people):
     sheet.append([])
     sheet.append(["Detalle de turnos"])
     sheet[sheet.max_row][0].font = Font(bold=True, size=12)
-    sheet.append(["Nombre", "Día", "Sucursal", "Horario inicio", "Horario fin", "Trabajadas"])
+    sheet.append([
+        "Nombre", "Día", "Sucursal", "Horario inicio", "Horario fin", "Trabajadas",
+        "Horas extra", "HD", "HN", "Observación",
+    ])
     detail_header = sheet.max_row
     for cell in sheet[detail_header]:
         cell.fill = header_fill
@@ -53,16 +57,23 @@ def fortnight_workbook(start_date, end_date, people):
     duplicate_names = name_counts(people)
     branches = {branch.pk: branch.name for branch in Branch.objects.all()}
     day_names = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
-    for assignment in assignments:
+    for assignment_index, assignment in enumerate(assignments):
         assigned_date, person_id, branch_id, start_time, end_time = assignment[:5]
         actual_start_time = assignment[5] if len(assignment) > 5 else None
         novelty_kind = assignment[6] if len(assignment) > 6 else None
         observation = assignment[7] if len(assignment) > 7 else ""
+        metrics = daily_metrics.get(assignment_index, {
+            "overtime": 0, "daytime": 0, "nighttime": 0,
+        })
         person = people_by_id.get(person_id)
         if person is None:
             continue
         if branch_id is None:
-            row = [person_display_name(person, duplicate_names), f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}", "Descanso", "", "", 0, ""]
+            row = [
+                person_display_name(person, duplicate_names),
+                f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}",
+                "Descanso", "", "", 0, 0, 0, 0, "",
+            ]
         else:
             effective_start_time = actual_start_time or start_time
             if novelty_kind in ("did_not_attend", "calamity"):
@@ -86,20 +97,21 @@ def fortnight_workbook(start_date, end_date, people):
                 effective_start_time,
                 end_time,
                 hours / 60,
+                metrics["overtime"] / 60,
+                metrics["daytime"] / 60,
+                metrics["nighttime"] / 60,
                 observation,
             ]
         sheet.append(row)
         if branch_id is None:
             for cell in sheet[sheet.max_row]:
                 cell.fill = rest_fill
-    sheet.cell(row=detail_header, column=7, value="Observación")
-    sheet.cell(row=detail_header, column=7).fill = header_fill
-    sheet.cell(row=detail_header, column=7).font = Font(color="FFFFFF", bold=True)
-    sheet.cell(row=detail_header, column=7).alignment = Alignment(horizontal="center")
-    for column, width in zip("ABCDEFG", (30, 18, 30, 16, 16, 18, 36)):
+    for column in range(1, 11):
+        sheet.cell(row=detail_header, column=column).alignment = Alignment(horizontal="center")
+    for column, width in zip("ABCDEFGHIJ", (30, 18, 30, 16, 16, 14, 14, 10, 10, 36)):
         sheet.column_dimensions[column].width = width
     sheet.freeze_panes = "A3"
-    sheet.auto_filter.ref = f"A{detail_header}:G{sheet.max_row}"
+    sheet.auto_filter.ref = f"A{detail_header}:J{sheet.max_row}"
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()

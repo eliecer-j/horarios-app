@@ -67,11 +67,14 @@
       );
     }
     let preservedPageScroll = 0;
+    let preservedScheduleScrollTop = 0;
     let preservedScheduleScroll = 0;
     document.body.addEventListener("htmx:beforeRequest", function (event) {
       if (event.detail.target && event.detail.target.id === "page-content") {
         preservedPageScroll = window.scrollY;
-        preservedScheduleScroll = document.querySelector(".schedule-wrap")?.scrollLeft || 0;
+        const schedule = document.querySelector(".schedule-wrap");
+        preservedScheduleScrollTop = schedule?.scrollTop || 0;
+        preservedScheduleScroll = schedule?.scrollLeft || 0;
       }
     });
     document.body.addEventListener("htmx:afterSettle", function () {
@@ -86,7 +89,10 @@
         window.scrollTo(0, preservedPageScroll);
       }
       const schedule = document.querySelector(".schedule-wrap");
-      if (schedule) schedule.scrollLeft = preservedScheduleScroll;
+      if (schedule) {
+        schedule.scrollTop = preservedScheduleScrollTop;
+        schedule.scrollLeft = preservedScheduleScroll;
+      }
     });
     document.addEventListener("DOMContentLoaded", function () {
       updateActiveNavigation();

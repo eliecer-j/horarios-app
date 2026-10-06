@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from django.db import connection, transaction
+from django.utils import timezone
 
 from .models import AssignmentNovelty, Person
 
@@ -36,8 +37,31 @@ def week_novelties(week_start):
             ),
             "observation": novelty.observation,
         }
-        for novelty in AssignmentNovelty.objects.filter(week_start=week_start)
+        for novelty in AssignmentNovelty.objects.filter(
+            week_start=week_start, archived_at__isnull=True
+        )
     }
+
+
+def week_historical_novelties(week_start):
+    historical = {}
+    for novelty in AssignmentNovelty.objects.filter(
+        week_start=week_start, archived_at__isnull=False
+    ).order_by("archived_at", "pk"):
+        historical.setdefault((novelty.person_id, novelty.day), []).append({
+            "kind": novelty.kind,
+            "actual_start_time": (
+                novelty.actual_start_time.strftime("%H:%M")
+                if novelty.actual_start_time else ""
+            ),
+            "observation": novelty.observation,
+            "archived_at": novelty.archived_at,
+        })
+    return historical
+
+
+def archive_novelties(novelties):
+    novelties.filter(archived_at__isnull=True).update(archived_at=timezone.now())
 
 
 def available_weeks():
@@ -69,9 +93,9 @@ def save_assignment(week_start, person_id, day, form):
                     "DELETE FROM assignments WHERE week_start = %s AND person_id = %s AND day = %s",
                     [week_start.isoformat(), person_id, day],
                 )
-            AssignmentNovelty.objects.filter(
+            archive_novelties(AssignmentNovelty.objects.filter(
                 week_start=week_start, person_id=person_id, day=day
-            ).delete()
+            ))
         return
 
     if status == "rest":
@@ -93,15 +117,12 @@ def save_assignment(week_start, person_id, day, form):
             )
         if status == "rest" or (
             status == "work"
-            and (
-                current is None
-                or current["start_time"] != start_time
-                or current["end_time"] != end_time
-            )
+            and current is not None
+            and current["branch_id"] != branch_id
         ):
-            AssignmentNovelty.objects.filter(
+            archive_novelties(AssignmentNovelty.objects.filter(
                 week_start=week_start, person_id=person_id, day=day
-            ).delete()
+            ))
 
 
 def assignments_between(start_date, end_date):
@@ -124,6 +145,7 @@ def assignments_between(start_date, end_date):
         for novelty in AssignmentNovelty.objects.filter(
             week_start__gte=date.fromisoformat(earliest_week),
             week_start__lte=end_date,
+            archived_at__isnull=True,
         )
     }
     assignments = []
@@ -145,7 +167,7 @@ def clear_week(week_start):
     with transaction.atomic():
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM assignments WHERE week_start = %s", [week_start.isoformat()])
-        AssignmentNovelty.objects.filter(week_start=week_start).delete()
+        archive_novelties(AssignmentNovelty.objects.filter(week_start=week_start))
 
 
 def remove_vacation_assignments(person, start, end):
@@ -165,9 +187,9 @@ def remove_vacation_assignments(person, start, end):
             remove_keys,
         )
     for week_start, person_id, day in remove_keys:
-        AssignmentNovelty.objects.filter(
+        archive_novelties(AssignmentNovelty.objects.filter(
             week_start=date.fromisoformat(week_start), person_id=person_id, day=day
-        ).delete()
+        ))
     return len(remove_keys)
 
 
@@ -205,7 +227,7 @@ def delete_branch(branch):
             assignment_keys = cursor.fetchall()
             cursor.execute("DELETE FROM assignments WHERE branch_id = %s", [branch.pk])
         for week_start, person_id, day in assignment_keys:
-            AssignmentNovelty.objects.filter(
+            archive_novelties(AssignmentNovelty.objects.filter(
                 week_start=date.fromisoformat(week_start), person_id=person_id, day=day
-            ).delete()
+            ))
         branch.delete()

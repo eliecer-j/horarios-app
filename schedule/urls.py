@@ -15,6 +15,11 @@ urlpatterns = [
         views.novelty_save,
         name="novelty_save",
     ),
+    path(
+        "novedades/<str:week_start>/assignment/<int:person_id>/<int:day>/history/delete/",
+        views.novelty_history_delete,
+        name="novelty_history_delete",
+    ),
     path("people/", views.people, name="people"),
     path("people/<int:person_id>/delete/", views.person_delete, name="person_delete"),
     path("branches/", views.branches, name="branches"),

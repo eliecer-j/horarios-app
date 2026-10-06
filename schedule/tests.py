@@ -3,13 +3,14 @@ from io import BytesIO
 
 from django.db import connection
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from django.urls import reverse
 from openpyxl import load_workbook
 
 from .forms import AssignmentForm, LateArrivalForm
-from .metrics import shift_metrics, summarize_period
+from .metrics import assignment_period_metrics, shift_metrics, summarize_period
 from .models import AssignmentNovelty, Branch, Person
-from .services import assignments_between, monday_of
+from .services import assignments_between, clear_week, delete_branch, monday_of
 from .templatetags.schedule_tags import capitalize
 
 
@@ -203,6 +204,10 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "schedule-grid-scroll")
         self.assertContains(response, "Novedades")
+        self.assertContains(response, "MODO NOVEDADES")
+        self.assertContains(response, "Ir a Turnos")
+        self.assertContains(response, "Novedades activas")
+        self.assertNotContains(response, "Sin asignar")
         self.assertContains(response, "schedule-main-shell")
 
     def test_late_arrival_is_included_in_analysis_hours(self):
@@ -240,7 +245,7 @@ class LegacyDatabaseViewsTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "+ Llegada tarde")
+        self.assertContains(response, "Llegada tarde")
         novelty = AssignmentNovelty.objects.get(
             week_start=self.week_start, person_id=self.person.pk, day=0
         )
@@ -279,8 +284,8 @@ class LegacyDatabaseViewsTests(TestCase):
         session.save()
 
         for day, kind, observation, badge in (
-            (0, AssignmentNovelty.DID_NOT_ATTEND, "No avisó", "+ No se presentó"),
-            (1, AssignmentNovelty.CALAMITY, "Emergencia familiar", "+ Calamidad"),
+            (0, AssignmentNovelty.DID_NOT_ATTEND, "No avisó", "No se presentó"),
+            (1, AssignmentNovelty.CALAMITY, "Emergencia familiar", "Calamidad"),
         ):
             with self.subTest(kind=kind):
                 response = self.client.post(
@@ -325,10 +330,10 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(workbook.active["F9"].value, 0)
         self.assertIn("No se presentó", workbook.active["C8"].value)
         self.assertIn("Calamidad", workbook.active["C9"].value)
-        self.assertEqual(workbook.active["G8"].value, "No avisó")
-        self.assertEqual(workbook.active["G9"].value, "Emergencia familiar")
+        self.assertEqual(workbook.active["J8"].value, "No avisó")
+        self.assertEqual(workbook.active["J9"].value, "Emergencia familiar")
 
-    def test_changing_shift_times_removes_outdated_novelty(self):
+    def test_changing_shift_times_preserves_existing_novelty(self):
         with connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
@@ -356,9 +361,100 @@ class LegacyDatabaseViewsTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(AssignmentNovelty.objects.exists())
+        novelty = AssignmentNovelty.objects.get()
+        self.assertIsNone(novelty.archived_at)
+        self.assertEqual(novelty.actual_start_time.strftime("%H:%M"), "09:30")
+        assignments = assignments_between(self.week_start, self.week_start)
+        self.assertEqual(assignments[0][5], "09:30")
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
 
-    def test_selecting_no_novelty_removes_existing_record_only(self):
+        novelties_page = self.client.get(
+            reverse("novelties_week", args=[self.week_start.isoformat()])
+        )
+
+        self.assertEqual(novelties_page.status_code, 200)
+        self.assertContains(novelties_page, "Llegada tarde")
+        self.assertNotContains(novelties_page, "Histórico ·")
+
+    def test_changing_shift_branch_archives_outdated_novelty(self):
+        other_branch = Branch.objects.create(name="Norte", color="#2F6FED")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                [self.week_start.isoformat(), self.person.pk, self.branch.pk],
+            )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="09:30",
+        )
+
+        response = self.client.post(
+            reverse(
+                "assignment_save",
+                args=[self.week_start.isoformat(), self.person.pk, 0],
+            ),
+            {
+                "status": "work",
+                "branch": other_branch.pk,
+                "start_time": "08:00",
+                "end_time": "16:00",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        novelty = AssignmentNovelty.objects.get()
+        self.assertIsNotNone(novelty.archived_at)
+        self.assertEqual(novelty.actual_start_time.strftime("%H:%M"), "09:30")
+
+    def test_removing_shift_archives_associated_novelty(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                [self.week_start.isoformat(), self.person.pk, self.branch.pk],
+            )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="09:30",
+        )
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+
+        response = self.client.post(
+            reverse(
+                "assignment_save",
+                args=[self.week_start.isoformat(), self.person.pk, 0],
+            ),
+            {"status": "unassigned"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        novelty = AssignmentNovelty.objects.get()
+        self.assertIsNotNone(novelty.archived_at)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT COUNT(*) FROM assignments "
+                "WHERE week_start = %s AND person_id = %s AND day = 0",
+                [self.week_start.isoformat(), self.person.pk],
+            )
+            self.assertEqual(cursor.fetchone()[0], 0)
+
+        history_response = self.client.get(
+            reverse("novelties_week", args=[self.week_start.isoformat()])
+        )
+        self.assertEqual(history_response.status_code, 200)
+        self.assertContains(history_response, "Histórico · Llegada tarde")
+        self.assertContains(history_response, "09:30")
+
+    def test_selecting_no_novelty_archives_record_without_changing_shift(self):
         with connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
@@ -385,9 +481,95 @@ class LegacyDatabaseViewsTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Novedad eliminada.")
+        self.assertContains(response, "Novedad conservada en el historial.")
         self.assertNotContains(response, "+ Calamidad")
-        self.assertFalse(AssignmentNovelty.objects.exists())
+        novelty = AssignmentNovelty.objects.get()
+        self.assertIsNotNone(novelty.archived_at)
+        self.assertEqual(novelty.observation, "Registro equivocado")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT branch_id, start_time, end_time FROM assignments "
+                "WHERE week_start = %s AND person_id = %s AND day = 0",
+                [self.week_start.isoformat(), self.person.pk],
+            )
+            self.assertEqual(cursor.fetchone(), (self.branch.pk, "08:00", "16:00"))
+
+    def test_clearing_week_archives_novelties(self):
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="09:30",
+        )
+
+        clear_week(self.week_start)
+
+        novelty = AssignmentNovelty.objects.get()
+        self.assertIsNotNone(novelty.archived_at)
+
+    def test_deleting_branch_archives_associated_novelties(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                [self.week_start.isoformat(), self.person.pk, self.branch.pk],
+            )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="09:30",
+        )
+
+        delete_branch(self.branch)
+
+        novelty = AssignmentNovelty.objects.get()
+        self.assertIsNotNone(novelty.archived_at)
+
+    def test_history_can_be_deleted_for_one_cell_without_removing_current_novelty(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                [self.week_start.isoformat(), self.person.pk, self.branch.pk],
+            )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="09:30",
+            archived_at=timezone.now(),
+        )
+        current_novelty = AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="10:00",
+        )
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+
+        page = self.client.get(
+            reverse("novelties_week", args=[self.week_start.isoformat()])
+        )
+        self.assertContains(page, "Borrar historial")
+
+        response = self.client.post(
+            reverse(
+                "novelty_history_delete",
+                args=[self.week_start.isoformat(), self.person.pk, 0],
+            ),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Historial de la celda eliminado.")
+        self.assertFalse(
+            AssignmentNovelty.objects.filter(archived_at__isnull=False).exists()
+        )
+        self.assertEqual(
+            AssignmentNovelty.objects.get(archived_at__isnull=True).pk,
+            current_novelty.pk,
+        )
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT branch_id, start_time, end_time FROM assignments "
@@ -448,6 +630,48 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_overnight_shift_metrics(self):
         self.assertEqual(shift_metrics("22:00", "06:00"), (8.0, 0.0, 0.0, 0.0))
 
+    def test_analysis_preserves_negative_daytime_balance_and_nighttime_overtime(self):
+        week_start = date(2026, 10, 5)
+        shift_data = (
+            ("09:30", "18:30", None, None),
+            ("09:30", "14:00", None, None),
+            ("09:30", "18:00", None, None),
+            ("09:30", "20:00", "09:37", AssignmentNovelty.LATE_ARRIVAL),
+            ("09:30", "15:00", None, None),
+            ("09:30", "18:30", None, None),
+        )
+        assignments = [
+            (
+                week_start + timedelta(days=day),
+                self.person.pk,
+                self.branch.pk,
+                start_time,
+                end_time,
+                actual_start_time,
+                novelty_kind,
+                "",
+            )
+            for day, (start_time, end_time, actual_start_time, novelty_kind) in zip(
+                (0, 1, 2, 3, 4, 6), shift_data
+            )
+        ]
+
+        daily_metrics = assignment_period_metrics([self.person], assignments)
+        summaries, _ = summarize_period([self.person], assignments, daily_metrics)
+        metric = summaries[self.person.pk]
+
+        self.assertAlmostEqual(metric["worked"], 46 + 53 / 60)
+        self.assertAlmostEqual(metric["overtime"], -1 - 7 / 60)
+        self.assertAlmostEqual(metric["daytime"], -2 - 7 / 60)
+        self.assertEqual(metric["nighttime"], 1)
+        self.assertEqual(daily_metrics[3]["nighttime"], 60)
+        self.assertEqual(daily_metrics[1]["daytime"], -210)
+        self.assertEqual(daily_metrics[4]["daytime"], -150)
+        self.assertEqual(
+            sum(item["overtime"] for item in daily_metrics.values()),
+            -67,
+        )
+
     def test_analysis_nets_overtime_against_shorter_workdays(self):
         shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")
         with connection.cursor() as cursor:
@@ -496,6 +720,57 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertAlmostEqual(workbook.active["D3"].value, 19 / 60)
         self.assertAlmostEqual(workbook.active["E3"].value, 19 / 60)
         self.assertEqual(workbook.active["F3"].value, 0)
+        self.assertEqual(workbook.active["G7"].value, "Horas extra")
+        self.assertEqual(workbook.active["H7"].value, "HD")
+        self.assertEqual(workbook.active["I7"].value, "HN")
+        self.assertAlmostEqual(
+            sum(workbook.active.cell(row=row, column=7).value for row in range(8, 15)),
+            workbook.active["D3"].value,
+        )
+        self.assertAlmostEqual(
+            sum(workbook.active.cell(row=row, column=8).value for row in range(8, 15)),
+            workbook.active["E3"].value,
+        )
+        self.assertAlmostEqual(
+            sum(workbook.active.cell(row=row, column=9).value for row in range(8, 15)),
+            workbook.active["F3"].value,
+        )
+
+    def test_analysis_export_shows_daily_daytime_and_nighttime_overtime(self):
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO assignments VALUES (%s, %s, %s, %s, %s, %s)",
+                [
+                    (
+                        self.week_start.isoformat(), self.person.pk, 0,
+                        self.branch.pk, "22:00", "08:00",
+                    ),
+                    (
+                        self.week_start.isoformat(), self.person.pk, 1,
+                        self.branch.pk, "15:00", "01:00",
+                    ),
+                ],
+            )
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+
+        workbook_response = self.client.get(
+            reverse("analysis_export"),
+            {
+                "month": self.week_start.strftime("%Y-%m"),
+                "fortnight": "1" if self.week_start.day <= 15 else "2",
+            },
+        )
+
+        self.assertEqual(workbook_response.status_code, 200)
+        workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
+        sheet = workbook.active
+        self.assertEqual((sheet["G8"].value, sheet["H8"].value, sheet["I8"].value), (2, 2, 0))
+        self.assertEqual((sheet["G9"].value, sheet["H9"].value, sheet["I9"].value), (2, 0, 2))
+        self.assertEqual(sheet["D3"].value, sheet["G8"].value + sheet["G9"].value)
+        self.assertEqual(sheet["E3"].value, sheet["H8"].value + sheet["H9"].value)
+        self.assertEqual(sheet["F3"].value, sheet["I8"].value + sheet["I9"].value)
 
     def test_absence_and_calamity_reduce_overtime_and_daily_quota(self):
         shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")

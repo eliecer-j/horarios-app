@@ -45,12 +45,14 @@ class AssignmentNovelty(models.Model):
     kind = models.CharField(max_length=24, choices=KIND_CHOICES, default=LATE_ARRIVAL)
     actual_start_time = models.TimeField(null=True, blank=True)
     observation = models.TextField(blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "assignment_novelties"
         constraints = [
             models.UniqueConstraint(
                 fields=("week_start", "person_id", "day"),
+                condition=models.Q(archived_at__isnull=True),
                 name="unique_assignment_novelty",
             ),
             models.CheckConstraint(

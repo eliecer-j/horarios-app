@@ -19,6 +19,7 @@ from .metrics import DAY_SHIFT_END_HOUR, DAY_SHIFT_START_HOUR, summarize_period
 from .models import AssignmentNovelty, Branch, Person
 from .services import (
     assignments_between,
+    archive_novelties,
     available_weeks,
     clear_week,
     delete_branch,
@@ -30,6 +31,7 @@ from .services import (
     remove_vacation_assignments,
     save_assignment,
     week_assignments,
+    week_historical_novelties,
     week_novelties,
 )
 
@@ -95,6 +97,7 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
     branches = list(Branch.objects.all())
     assignments = week_assignments(week_start)
     novelties = week_novelties(week_start)
+    historical_novelties = week_historical_novelties(week_start)
     duplicate_names = name_counts(people)
     today = timezone.localdate()
     days = [
@@ -133,6 +136,9 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
                     "day": day,
                     "assignment": assignments.get((person.pk, day["index"])),
                     "novelty": novelties.get((person.pk, day["index"])),
+                    "historical_novelties": historical_novelties.get(
+                        (person.pk, day["index"]), []
+                    ),
                     "on_vacation": is_on_vacation(person, day["date"]),
                     "branch": next(
                         (branch for branch in branches
@@ -162,6 +168,13 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
         "pending_cells": pending_cells,
         "pending_people": pending_people,
         "no_rest_count": no_rest_count,
+        "assigned_shifts_count": sum(
+            1 for assignment in assignments.values() if assignment["branch_id"] is not None
+        ),
+        "active_novelties_count": len(novelties),
+        "historical_novelties_count": sum(
+            len(cell_novelties) for cell_novelties in historical_novelties.values()
+        ),
         "filter_key": filter_key,
         "edit": edit,
         "edit_person": next((person for person in people if edit and person.pk == edit[0]), None),
@@ -279,14 +292,17 @@ def novelty_save(request, week_start, person_id, day):
     )
     if form.is_valid():
         if form.cleaned_data["kind"] == LateArrivalForm.NO_NOVELTY:
-            AssignmentNovelty.objects.filter(
+            archive_novelties(AssignmentNovelty.objects.filter(
                 week_start=week_start,
                 person_id=person_id,
                 day=day,
-            ).delete()
-            message = "Novedad eliminada."
+                archived_at__isnull=True,
+            ))
+            message = "Novedad conservada en el historial."
         else:
-            AssignmentNovelty.objects.update_or_create(
+            AssignmentNovelty.objects.filter(
+                archived_at__isnull=True
+            ).update_or_create(
                 week_start=week_start,
                 person_id=person_id,
                 day=day,
@@ -314,6 +330,36 @@ def novelty_save(request, week_start, person_id, day):
         "novelties_mode": True,
         "week_route": "novelties_week",
     })
+    return render_screen(request, "schedule/content.html", context)
+
+
+@require_POST
+def novelty_history_delete(request, week_start, person_id, day):
+    if request.session.get("analysis_authenticated") is not True:
+        return _analysis_unlock_redirect(request)
+    week_start = _parse_week(week_start)
+    if day not in range(7):
+        raise Http404("El día solicitado no es válido.")
+    if not Person.objects.filter(pk=person_id).exists():
+        raise Http404("La persona solicitada no existe.")
+
+    deleted_count, _ = AssignmentNovelty.objects.filter(
+        week_start=week_start,
+        person_id=person_id,
+        day=day,
+        archived_at__isnull=False,
+    ).delete()
+    message = (
+        "Historial de la celda eliminado."
+        if deleted_count
+        else "La celda no tenía historial para eliminar."
+    )
+    context = _schedule_context(
+        week_start,
+        message=message,
+        filter_key=request.POST.get("filter", "all"),
+    )
+    context.update({"novelties_mode": True, "week_route": "novelties_week"})
     return render_screen(request, "schedule/content.html", context)
 
 
