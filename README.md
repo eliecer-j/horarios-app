@@ -23,6 +23,10 @@ Aplicación web de gestión de horarios migrada a Django, HTMX y SQLite. La inte
    python manage.py collectstatic
 
    waitress-serve --listen=0.0.0.0:8000 horarios_project.wsgi:application 
+
+   .\HorariosServicio.exe install
+
+   .\HorariosServicio.exe start
    ```
 
 4. Abre <http://127.0.0.1:8000/>.
