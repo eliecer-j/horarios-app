@@ -3,11 +3,11 @@
     <name>Horarios Django</name>
     <description>Servidor Django de horarios</description>
 
-    <executable>C:\horarios app\.venv\Scripts\waitress-serve.exe</executable>
+    <executable>C:\horarios-app\.venv\Scripts\waitress-serve.exe</executable>
 
     <arguments>--listen=0.0.0.0:8000 horarios_project.wsgi:application</arguments>
 
-    <workingdirectory>C:\horarios app</workingdirectory>
+    <workingdirectory>C:\horarios-app</workingdirectory>
 
     <log mode="roll" />
 
