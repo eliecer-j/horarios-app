@@ -3,4 +3,5 @@ __pycache__*
 turnos.db*
 turnos.db-shm
 turnos.db-wal
+staticfiles/
 
