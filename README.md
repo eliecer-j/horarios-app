@@ -33,7 +33,7 @@ Aplicación web de gestión de horarios migrada a Django, HTMX y SQLite. La inte
 
 ## Base de datos existente
 
-Por defecto, Django se conecta al archivo `turnos.db` de la raíz del proyecto. Las tablas existentes `people`, `branches` y `assignments` se consultan directamente y no son administradas por las migraciones de Django. Las migraciones crean las tablas propias de Django y la tabla `assignment_novelties`; no vuelven a sembrar ni reemplazan los datos de horarios.
+Por defecto, Django se conecta al archivo `turnos.db` de la raíz del proyecto. Las tablas `people`, `branches` y `assignments` se consultan directamente y no son administradas por los modelos de Django. La migración nueva las crea vacías cuando faltan (por ejemplo, en una copia nueva del proyecto), pero conserva las tablas y los datos si ya existen. Las migraciones también crean las tablas propias de Django y `assignment_novelties`; no siembran personas, sucursales ni horarios.
 
 Se puede seleccionar otra base de datos con la variable `DATABASE_PATH`. Antes de probar la migración sobre datos importantes, conserva una copia del archivo SQLite y sus archivos `-wal`/`-shm` si están presentes.
 

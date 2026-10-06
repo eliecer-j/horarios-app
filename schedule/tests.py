@@ -15,37 +15,6 @@ from .templatetags.schedule_tags import capitalize
 
 
 class LegacyDatabaseViewsTests(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "CREATE TABLE people ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, dni TEXT, "
-                "vacation_start TEXT, vacation_end TEXT)"
-            )
-            cursor.execute(
-                "CREATE TABLE branches ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, color TEXT NOT NULL)"
-            )
-            cursor.execute(
-                "CREATE TABLE assignments ("
-                "week_start TEXT NOT NULL, person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE, "
-                "day INTEGER NOT NULL CHECK (day BETWEEN 0 AND 6), "
-                "branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE, "
-                "start_time TEXT, end_time TEXT, PRIMARY KEY (week_start, person_id, day), "
-                "CHECK ((start_time IS NULL AND end_time IS NULL AND branch_id IS NULL) "
-                "OR (start_time IS NOT NULL AND end_time IS NOT NULL AND branch_id IS NOT NULL)))"
-            )
-
-    @classmethod
-    def tearDownClass(cls):
-        with connection.cursor() as cursor:
-            cursor.execute("DROP TABLE assignments")
-            cursor.execute("DROP TABLE branches")
-            cursor.execute("DROP TABLE people")
-        super().tearDownClass()
-
     def setUp(self):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM assignments")
