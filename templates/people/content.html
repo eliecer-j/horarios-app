@@ -19,7 +19,7 @@
             <div class="form-field">{{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}</div>
           {% endfor %}
         </div>
-        <p class="form-hint">Al guardar vacaciones, se quitarán los turnos que coincidan con esas fechas.</p>
+        <p class="form-hint">Cada nuevo rango se añade al historial sin quitar los anteriores. Se quitarán los turnos que coincidan con esas fechas.</p>
         <div class="modal-actions"><a class="button button-ghost" href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar persona</button></div>
       </form>
     </section>
@@ -29,7 +29,17 @@
       <article class="person-row">
         <span class="avatar avatar-large">{{ person.name|slice:":1"|upper }}</span>
         <div class="row-main"><h2>{{ person.display_name }}</h2><p class="muted">DNI: {{ person.dni|default:"no registrado" }} · {{ week_label }}: {{ person.week_work }} turnos, {{ person.week_rest }} descansos</p>
-          {% if person.vacation_start and person.vacation_end %}<p class="vacation-detail">Vacaciones: {{ person.vacation_start|date:'d/m/Y' }} al {{ person.vacation_end|date:'d/m/Y' }}</p>{% endif %}
+          {% for vacation in person.vacation_periods_display %}
+            <div class="vacation-detail-row">
+              <p class="vacation-detail">Vacaciones: {{ vacation.start|date:'d/m/Y' }} al {{ vacation.end|date:'d/m/Y' }}</p>
+              {% if vacation.pk %}
+                <form method="post" action="{% url 'vacation_period_delete' person.pk vacation.pk %}" hx-post="{% url 'vacation_period_delete' person.pk vacation.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar este periodo de vacaciones?">
+                  {% csrf_token %}
+                  <button class="button button-ghost danger-text small-button" type="submit">Quitar</button>
+                </form>
+              {% endif %}
+            </div>
+          {% endfor %}
         </div>
         <div class="row-actions">
           <a class="button button-secondary small-button" href="{% url 'people' %}?edit={{ person.pk }}" hx-get="{% url 'people' %}?edit={{ person.pk }}" hx-target="#page-content">Editar</a>

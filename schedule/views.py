@@ -16,10 +16,11 @@ from django.views.decorators.http import require_POST
 from .exports import fortnight_workbook, workbook_response
 from .forms import AnalysisPasswordForm, AssignmentForm, BranchForm, LateArrivalForm, PersonForm
 from .metrics import DAY_SHIFT_END_HOUR, DAY_SHIFT_START_HOUR, summarize_period
-from .models import AssignmentNovelty, Branch, Person
+from .models import AssignmentNovelty, Branch, Person, VacationPeriod
 from .services import (
     assignments_between,
     archive_novelties,
+    attach_vacation_ranges,
     available_weeks,
     clear_week,
     delete_branch,
@@ -93,7 +94,7 @@ def _week_label(week_start):
 
 
 def _schedule_context(week_start, edit=None, form=None, message="", filter_key="all"):
-    people = list(Person.objects.all())
+    people = attach_vacation_ranges(Person.objects.all())
     branches = list(Branch.objects.all())
     assignments = week_assignments(week_start)
     novelties = week_novelties(week_start)
@@ -421,12 +422,23 @@ def people(request):
             with transaction.atomic():
                 if person is None:
                     person = Person()
+                elif person.vacation_start and person.vacation_end:
+                    VacationPeriod.objects.get_or_create(
+                        person_id=person.pk,
+                        start_date=person.vacation_start,
+                        end_date=person.vacation_end,
+                    )
                 person.name = cleaned["name"]
                 person.dni = cleaned["dni"]
                 person.vacation_start = cleaned["vacation_start"]
                 person.vacation_end = cleaned["vacation_end"]
                 person.save()
                 if person.vacation_start and person.vacation_end:
+                    VacationPeriod.objects.get_or_create(
+                        person_id=person.pk,
+                        start_date=person.vacation_start,
+                        end_date=person.vacation_end,
+                    )
                     removed = remove_vacation_assignments(
                         person, person.vacation_start, person.vacation_end
                     )
@@ -440,11 +452,12 @@ def people(request):
     queryset = Person.objects.all()
     if query:
         queryset = queryset.filter(Q(name__icontains=query) | Q(dni__icontains=query))
-    people_list = list(queryset)
+    people_list = attach_vacation_ranges(queryset)
     week_start = monday_of(timezone.localdate())
     assignments = week_assignments(week_start)
     duplicate_names = name_counts(people_list)
     for person_item in people_list:
+        person_item.vacation_periods_display = person_item._vacation_ranges
         week_values = [
             assignments.get((person_item.pk, day))
             for day in range(7)
@@ -478,6 +491,35 @@ def person_delete(request, person_id):
     request.method = "GET"
     request.GET = request.GET.copy()
     request.GET["message"] = "Persona eliminada junto con sus turnos."
+    return people(request)
+
+
+@require_POST
+def vacation_period_delete(request, person_id, period_id):
+    try:
+        person = Person.objects.get(pk=person_id)
+    except Person.DoesNotExist as exc:
+        raise Http404("La persona solicitada no existe.") from exc
+    try:
+        period = VacationPeriod.objects.get(pk=period_id, person_id=person.pk)
+    except VacationPeriod.DoesNotExist as exc:
+        raise Http404("El periodo de vacaciones solicitado no existe.") from exc
+
+    with transaction.atomic():
+        if (
+            person.vacation_start == period.start_date
+            and person.vacation_end == period.end_date
+        ):
+            person.vacation_start = None
+            person.vacation_end = None
+            person.save(update_fields=("vacation_start", "vacation_end"))
+        period.delete()
+
+    if request.headers.get("HX-Request") != "true":
+        return redirect("people")
+    request.method = "GET"
+    request.GET = request.GET.copy()
+    request.GET["message"] = "Periodo de vacaciones eliminado."
     return people(request)
 
 
@@ -632,7 +674,7 @@ def schedule_export(request):
     from schedule_export import build_schedule_workbook
 
     start_date, end_date = _parse_export_dates(request)
-    people_list = list(Person.objects.all())
+    people_list = attach_vacation_ranges(Person.objects.all())
     duplicate_names = {}
     for person in people_list:
         key = person.name.strip().lower()
@@ -643,8 +685,12 @@ def schedule_export(request):
     ]
     branch_map = {branch.pk: (branch.name, branch.color) for branch in Branch.objects.all()}
     vacations = {
-        person.pk: (person.vacation_start.isoformat(), person.vacation_end.isoformat())
-        for person in people_list if person.vacation_start and person.vacation_end
+        person.pk: [
+            (period["start"].isoformat(), period["end"].isoformat())
+            for period in person._vacation_ranges
+        ]
+        for person in people_list
+        if person._vacation_ranges
     }
     payload = build_schedule_workbook(
         start_date, end_date, people_for_export,

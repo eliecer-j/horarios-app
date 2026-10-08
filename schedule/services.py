@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from django.db import connection, transaction
 from django.utils import timezone
 
-from .models import AssignmentNovelty, Person
+from .models import AssignmentNovelty, Person, VacationPeriod
 
 
 def monday_of(day):
@@ -71,11 +71,59 @@ def available_weeks():
 
 
 def is_on_vacation(person, assigned_date):
-    return bool(
-        person.vacation_start
-        and person.vacation_end
-        and person.vacation_start <= assigned_date <= person.vacation_end
+    ranges = getattr(person, "_vacation_ranges", None)
+    if ranges is None:
+        ranges = [
+            {"start": start, "end": end}
+            for start, end in VacationPeriod.objects.filter(
+                person_id=person.pk
+            ).values_list("start_date", "end_date")
+        ]
+        if person.vacation_start and person.vacation_end:
+            legacy_range = {
+                "start": person.vacation_start,
+                "end": person.vacation_end,
+            }
+            if legacy_range not in ranges:
+                ranges.append(legacy_range)
+        person._vacation_ranges = ranges
+    return any(
+        period["start"] <= assigned_date <= period["end"]
+        for period in ranges
     )
+
+
+def attach_vacation_ranges(people):
+    people = list(people)
+    person_ids = [person.pk for person in people]
+    ranges_by_person = {person_id: [] for person_id in person_ids}
+    for period_id, person_id, start, end in VacationPeriod.objects.filter(
+        person_id__in=person_ids
+    ).order_by("start_date", "end_date").values_list(
+        "pk", "person_id", "start_date", "end_date"
+    ):
+        ranges_by_person[person_id].append({
+            "pk": period_id,
+            "start": start,
+            "end": end,
+        })
+
+    for person in people:
+        ranges = ranges_by_person[person.pk]
+        if person.vacation_start and person.vacation_end:
+            legacy_range = {
+                "pk": None,
+                "start": person.vacation_start,
+                "end": person.vacation_end,
+            }
+            if not any(
+                period["start"] == legacy_range["start"]
+                and period["end"] == legacy_range["end"]
+                for period in ranges
+            ):
+                ranges.append(legacy_range)
+        person._vacation_ranges = ranges
+    return people
 
 
 def save_assignment(week_start, person_id, day, form):
@@ -214,6 +262,7 @@ def delete_person(person):
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM assignments WHERE person_id = %s", [person.pk])
         AssignmentNovelty.objects.filter(person_id=person.pk).delete()
+        VacationPeriod.objects.filter(person_id=person.pk).delete()
         person.delete()
 
 

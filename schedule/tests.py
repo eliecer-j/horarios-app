@@ -9,13 +9,14 @@ from openpyxl import load_workbook
 
 from .forms import AssignmentForm, LateArrivalForm
 from .metrics import assignment_period_metrics, shift_metrics, summarize_period
-from .models import AssignmentNovelty, Branch, Person
+from .models import AssignmentNovelty, Branch, Person, VacationPeriod
 from .services import assignments_between, clear_week, delete_branch, monday_of
 from .templatetags.schedule_tags import capitalize
 
 
 class LegacyDatabaseViewsTests(TestCase):
     def setUp(self):
+        VacationPeriod.objects.all().delete()
         with connection.cursor() as cursor:
             cursor.execute("DELETE FROM assignments")
             cursor.execute("DELETE FROM branches")
@@ -39,6 +40,119 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertLess(
             response.content.index(b">Dom<span>"),
             response.content.index(b'class="rest-count-column">Descansos</th>'),
+        )
+
+    def test_completed_vacation_days_remain_marked_in_past_week(self):
+        week_start = monday_of(date(2020, 1, 6))
+        self.person.vacation_start = date(2020, 1, 7)
+        self.person.vacation_end = date(2020, 1, 8)
+        self.person.save()
+
+        response = self.client.get(
+            reverse("schedule", args=[week_start.isoformat()])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.content.count(b'class="shift-cell vacation-cell">Vacaciones</span>'),
+            2,
+        )
+
+    def test_new_vacation_period_preserves_previous_vacation_cells(self):
+        first_start = date(2020, 1, 7)
+        first_end = date(2020, 1, 8)
+        second_start = date(2020, 2, 4)
+        second_end = date(2020, 2, 5)
+        self.person.vacation_start = first_start
+        self.person.vacation_end = first_end
+        self.person.save()
+
+        response = self.client.post(
+            reverse("people"),
+            {
+                "person_id": self.person.pk,
+                "name": self.person.name,
+                "dni": "",
+                "vacation_start": second_start.isoformat(),
+                "vacation_end": second_end.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(
+                VacationPeriod.objects.filter(person_id=self.person.pk).values_list(
+                    "start_date", "end_date"
+                )
+            ),
+            {(first_start, first_end), (second_start, second_end)},
+        )
+        for vacation_start in (first_start, second_start):
+            week_start = monday_of(vacation_start)
+            schedule_response = self.client.get(
+                reverse("schedule", args=[week_start.isoformat()])
+            )
+            self.assertEqual(schedule_response.status_code, 200)
+            self.assertEqual(
+                schedule_response.content.count(
+                    b'class="shift-cell vacation-cell">Vacaciones</span>'
+                ),
+                2,
+            )
+
+    def test_vacation_period_can_be_deleted_without_removing_other_periods(self):
+        first_start = date(2020, 1, 7)
+        first_end = date(2020, 1, 8)
+        second_start = date(2020, 2, 4)
+        second_end = date(2020, 2, 5)
+        first_period = VacationPeriod.objects.create(
+            person_id=self.person.pk,
+            start_date=first_start,
+            end_date=first_end,
+        )
+        second_period = VacationPeriod.objects.create(
+            person_id=self.person.pk,
+            start_date=second_start,
+            end_date=second_end,
+        )
+        self.person.vacation_start = second_start
+        self.person.vacation_end = second_end
+        self.person.save()
+
+        response = self.client.post(
+            reverse(
+                "vacation_period_delete",
+                args=[self.person.pk, second_period.pk],
+            ),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(VacationPeriod.objects.filter(pk=first_period.pk).exists())
+        self.assertFalse(VacationPeriod.objects.filter(pk=second_period.pk).exists())
+        self.person.refresh_from_db()
+        self.assertIsNone(self.person.vacation_start)
+        self.assertIsNone(self.person.vacation_end)
+
+        first_week = monday_of(first_start)
+        response = self.client.get(
+            reverse("schedule", args=[first_week.isoformat()])
+        )
+        self.assertEqual(
+            response.content.count(
+                b'class="shift-cell vacation-cell">Vacaciones</span>'
+            ),
+            2,
+        )
+        second_week = monday_of(second_start)
+        response = self.client.get(
+            reverse("schedule", args=[second_week.isoformat()])
+        )
+        self.assertEqual(
+            response.content.count(
+                b'class="shift-cell vacation-cell">Vacaciones</span>'
+            ),
+            0,
         )
 
     def test_rest_assignment_is_saved(self):
@@ -597,6 +711,30 @@ class LegacyDatabaseViewsTests(TestCase):
             response["Content-Type"],
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+    def test_schedule_export_marks_all_vacation_periods(self):
+        VacationPeriod.objects.create(
+            person_id=self.person.pk,
+            start_date=date(2020, 1, 7),
+            end_date=date(2020, 1, 8),
+        )
+        VacationPeriod.objects.create(
+            person_id=self.person.pk,
+            start_date=date(2020, 2, 4),
+            end_date=date(2020, 2, 5),
+        )
+
+        response = self.client.get(
+            reverse("schedule_export"),
+            {"start": "2020-01-06", "end": "2020-02-06"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        sheet = load_workbook(BytesIO(response.content), read_only=True).active
+        self.assertEqual(sheet["C3"].value, "Vacaciones")
+        self.assertEqual(sheet["D3"].value, "Vacaciones")
+        self.assertEqual(sheet["AE3"].value, "Vacaciones")
+        self.assertEqual(sheet["AF3"].value, "Vacaciones")
 
     def test_overnight_shift_metrics(self):
         self.assertEqual(shift_metrics("22:00", "06:00"), (8.0, 0.0, 0.0, 0.0))

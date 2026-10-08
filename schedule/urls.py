@@ -21,6 +21,11 @@ urlpatterns = [
         name="novelty_history_delete",
     ),
     path("people/", views.people, name="people"),
+    path(
+        "people/<int:person_id>/vacations/<int:period_id>/delete/",
+        views.vacation_period_delete,
+        name="vacation_period_delete",
+    ),
     path("people/<int:person_id>/delete/", views.person_delete, name="person_delete"),
     path("branches/", views.branches, name="branches"),
     path("branches/<int:branch_id>/delete/", views.branch_delete, name="branch_delete"),

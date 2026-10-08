@@ -80,12 +80,17 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
         name_cell.border = grid_border
         rest_count = 0
         vacation = vacations.get(pid)
+        if vacation and isinstance(vacation[0], str):
+            vacation = [vacation]
 
         for column, assigned_date in enumerate(days, start=2):
             cell = sheet.cell(row=row_index, column=column)
             cell.font = regular_font
             assignment = assignments_by_day.get((assigned_date, pid))
-            if vacation and vacation[0] <= assigned_date.isoformat() <= vacation[1]:
+            if vacation and any(
+                start <= assigned_date.isoformat() <= end
+                for start, end in vacation
+            ):
                 cell.value = "Vacaciones"
                 cell.fill = vacation_fill
             elif assignment is None:

@@ -16,6 +16,25 @@ class Person(models.Model):
         return self.name
 
 
+class VacationPeriod(models.Model):
+    person_id = models.IntegerField()
+    start_date = models.DateField()
+    end_date = models.DateField()
+
+    class Meta:
+        db_table = "vacation_periods"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("person_id", "start_date", "end_date"),
+                name="unique_person_vacation_period",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F("start_date")),
+                name="vacation_period_date_order",
+            ),
+        ]
+
+
 class Branch(models.Model):
     name = models.CharField(max_length=200, unique=True)
     color = models.CharField(max_length=7)
