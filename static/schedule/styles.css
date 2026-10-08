@@ -108,6 +108,14 @@ button, input, select { font: inherit; }
 .dark .novelty-empty-prompt { color: #fdba74 !important; }
 .novelties-mode .novelty-badge:not(.novelty-badge-historical) { background: #ffedd5; color: #9a3412 !important; }
 .dark .novelties-mode .novelty-badge:not(.novelty-badge-historical) { background: #4a2a1b; color: #fdba74 !important; }
+.novelties-mode .novelty-badge:not(.novelty-badge-historical),
+.novelties-mode .novelty-badge-historical { background: #000 !important; color: #fff !important; }
+.dark .novelties-mode .novelty-badge:not(.novelty-badge-historical),
+.dark .novelties-mode .novelty-badge-historical { background: #fff !important; color: #dc2626 !important; }
+.novelties-mode [data-novelty-kind-select].novelty-late-arrival-selected,
+.novelties-mode [data-novelty-kind-select] option[value="late_arrival"] { background: #000 !important; color: #fff !important; }
+.dark .novelties-mode [data-novelty-kind-select].novelty-late-arrival-selected,
+.dark .novelties-mode [data-novelty-kind-select] option[value="late_arrival"] { background: #fff !important; color: #dc2626 !important; }
 .schedule-week-toolbar { min-height: 40px; gap: 4px; padding: 3px 7px; border-radius: 8px; }
 .schedule-week-toolbar .icon-button { width: 29px; height: 29px; font-size: 16px; }
 .schedule-week-select { height: 30px; padding: 0 6px; font-size: 12px; }

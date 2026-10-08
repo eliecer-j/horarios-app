@@ -110,6 +110,7 @@
       const isLateArrival = kind.value === "late_arrival";
       group.hidden = !isLateArrival;
       time.required = isLateArrival;
+      kind.classList.toggle("novelty-late-arrival-selected", isLateArrival);
     }
     document.body.addEventListener("change", function (event) {
       if (event.target.matches("[data-novelty-kind-select]")) updateNoveltyFields();

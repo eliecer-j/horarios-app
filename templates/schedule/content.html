@@ -105,7 +105,7 @@
                         {% if novelties_mode %}
                           <span class="novelty-shift-context">{{ cell.branch.name|default:"Sucursal eliminada" }} · {{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
                           {% if cell.novelty %}
-                            <span class="novelty-badge">
+                            <span class="novelty-badge{% if cell.novelty.kind == 'late_arrival' %} novelty-badge-late-arrival{% endif %}">
                               {% if cell.novelty.kind == 'late_arrival' %}Llegada tarde{% elif cell.novelty.kind == 'did_not_attend' %}No se presentó{% elif cell.novelty.kind == 'calamity' %}Calamidad{% endif %}
                             </span>
                             {% if cell.novelty.observation %}<span class="novelty-observation" title="{{ cell.novelty.observation }}">{{ cell.novelty.observation }}</span>{% endif %}
@@ -124,7 +124,7 @@
                   <div class="novelty-history" aria-label="Historial de novedades">
                     {% for historical in cell.historical_novelties %}
                       <div class="novelty-history-item">
-                        <span class="novelty-badge novelty-badge-historical">
+                        <span class="novelty-badge novelty-badge-historical{% if historical.kind == 'late_arrival' %} novelty-badge-late-arrival{% endif %}">
                           Histórico · {% if historical.kind == 'late_arrival' %}Llegada tarde{% elif historical.kind == 'did_not_attend' %}No se presentó{% elif historical.kind == 'calamity' %}Calamidad{% endif %}
                         </span>
                         {% if historical.actual_start_time %}<span class="novelty-observation">Llegada: {{ historical.actual_start_time }}</span>{% endif %}
