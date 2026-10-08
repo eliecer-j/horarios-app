@@ -91,9 +91,9 @@
           <tr>
             <th scope="row" class="person-name"><span class="avatar">{{ row.person.name|slice:":1"|upper }}</span><span>{{ row.display_name|capitalize }}</span></th>
             {% for cell in row.cells %}
-              <td>
+              <td title="{{ row.display_name|capitalize }}">
                 {% if cell.on_vacation %}
-                  <span class="shift-cell vacation-cell" title="Vacaciones">Vacaciones</span>
+                  <span class="shift-cell vacation-cell">Vacaciones</span>
                 {% else %}
                   <a class="shift-cell {% if cell.assignment %}{% if cell.assignment.branch_id %}assigned-cell{% else %}rest-cell{% endif %}{% else %}empty-cell{% endif %}"
                     {% if cell.branch %}style="--branch-color: {{ cell.branch.color }}"{% endif %}
@@ -108,7 +108,7 @@
                             <span class="novelty-badge{% if cell.novelty.kind == 'late_arrival' %} novelty-badge-late-arrival{% endif %}">
                               {% if cell.novelty.kind == 'late_arrival' %}Llegada tarde{% elif cell.novelty.kind == 'did_not_attend' %}No se presentó{% elif cell.novelty.kind == 'calamity' %}Calamidad{% endif %}
                             </span>
-                            {% if cell.novelty.observation %}<span class="novelty-observation" title="{{ cell.novelty.observation }}">{{ cell.novelty.observation }}</span>{% endif %}
+                            {% if cell.novelty.observation %}<span class="novelty-observation">{{ cell.novelty.observation }}</span>{% endif %}
                           {% else %}
                             <span class="novelty-empty-prompt">＋ Registrar novedad</span>
                           {% endif %}
@@ -128,7 +128,7 @@
                           Histórico · {% if historical.kind == 'late_arrival' %}Llegada tarde{% elif historical.kind == 'did_not_attend' %}No se presentó{% elif historical.kind == 'calamity' %}Calamidad{% endif %}
                         </span>
                         {% if historical.actual_start_time %}<span class="novelty-observation">Llegada: {{ historical.actual_start_time }}</span>{% endif %}
-                        {% if historical.observation %}<span class="novelty-observation" title="{{ historical.observation }}">{{ historical.observation }}</span>{% endif %}
+                        {% if historical.observation %}<span class="novelty-observation">{{ historical.observation }}</span>{% endif %}
                         <span class="novelty-history-date">Cancelada {{ historical.archived_at|date:'d/m/Y H:i' }}</span>
                       </div>
                     {% endfor %}

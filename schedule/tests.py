@@ -35,6 +35,7 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, "Ana Torres")
         self.assertContains(response, "Centro")
         self.assertContains(response, "schedule-grid-scroll")
+        self.assertContains(response, 'title="Ana Torres"', html=False)
         self.assertLess(
             response.content.index(b">Dom<span>"),
             response.content.index(b'class="rest-count-column">Descansos</th>'),
@@ -176,6 +177,7 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, "MODO NOVEDADES")
         self.assertContains(response, "Ir a Turnos")
         self.assertContains(response, "Novedades activas")
+        self.assertContains(response, 'title="Ana Torres"', html=False)
         self.assertNotContains(response, "Sin asignar")
         self.assertContains(response, "schedule-main-shell")
 
