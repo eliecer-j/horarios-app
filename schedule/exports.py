@@ -62,6 +62,7 @@ def fortnight_workbook(start_date, end_date, people):
         actual_start_time = assignment[5] if len(assignment) > 5 else None
         novelty_kind = assignment[6] if len(assignment) > 6 else None
         observation = assignment[7] if len(assignment) > 7 else ""
+        assignment_type = assignment[8] if len(assignment) > 8 else "work"
         metrics = daily_metrics.get(assignment_index, {
             "overtime": 0, "daytime": 0, "nighttime": 0,
         })
@@ -72,7 +73,8 @@ def fortnight_workbook(start_date, end_date, people):
             row = [
                 person_display_name(person, duplicate_names),
                 f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}",
-                "Descanso", "", "", 0, 0, 0, 0, "",
+                "Incapacidad" if assignment_type == "incapacity" else "Descanso",
+                "", "", 0, 0, 0, 0, "",
             ]
         else:
             effective_start_time = actual_start_time or start_time

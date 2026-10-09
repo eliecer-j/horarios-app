@@ -28,6 +28,7 @@
         <a data-nav-section="branches" href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/branches/' in current_path %}active{% endif %}"><span>⌂</span> Sucursales</a>
         <a data-nav-section="analysis" href="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/analysis/' in current_path %}active{% endif %}"><span>▤</span> Análisis</a>
         <a data-nav-section="novelties" href="{% url 'novelties' %}" hx-get="{% url 'novelties' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/novedades/' in current_path %}active{% endif %}"><span>✦</span> Novedades</a>
+        <a data-nav-section="logs" href="{% url 'logs' %}" hx-get="{% url 'logs' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/logs/' in current_path %}active{% endif %}"><span>▧</span> Logs</a>
       </nav>
       <div class="sidebar-footer">
         <button type="button" class="nav-link theme-toggle" onclick="document.documentElement.classList.toggle('dark'); localStorage.setItem('turnos-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light')"><span>◐</span> Cambiar tema</button>
@@ -53,6 +54,8 @@
               ? "analysis"
               : path.startsWith("/novedades/")
                 ? "novelties"
+                : path.startsWith("/logs/")
+                  ? "logs"
               : null;
 
       document.querySelectorAll("[data-nav-section]").forEach(function (link) {

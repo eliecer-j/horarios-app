@@ -1,0 +1,33 @@
+<section class="page-stack">
+  <header class="page-header">
+    <div><p class="eyebrow">Auditoría</p><h1>Logs</h1><p class="muted">{{ page_obj.paginator.count }} cambios registrados</p></div>
+  </header>
+  <div class="schedule-wrap card">
+    <table class="data-table logs-table">
+      <thead><tr><th>Fecha y hora</th><th>IP</th><th>Acción</th><th>Detalles</th></tr></thead>
+      <tbody>
+        {% for entry in page_obj %}
+          <tr>
+            <td>{{ entry.created_at|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ entry.ip_address|default:"No disponible" }}</td>
+            <td>{{ entry.action }}</td>
+            <td>{{ entry.details|default:"—" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="logs-empty">Aún no hay cambios registrados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.has_other_pages %}
+    <nav class="logs-pagination" aria-label="Paginación de logs">
+      {% if page_obj.has_previous %}
+        <a class="button button-secondary small-button" href="?page={{ page_obj.previous_page_number }}" hx-get="{% url 'logs' %}?page={{ page_obj.previous_page_number }}" hx-target="#page-content">← Anterior</a>
+      {% endif %}
+      <span class="muted">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a class="button button-secondary small-button" href="?page={{ page_obj.next_page_number }}" hx-get="{% url 'logs' %}?page={{ page_obj.next_page_number }}" hx-target="#page-content">Siguiente →</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+</section>

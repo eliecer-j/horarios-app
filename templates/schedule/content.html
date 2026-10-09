@@ -116,6 +116,7 @@
                           <strong>{{ cell.branch.name|default:"Sucursal eliminada" }}</strong>
                           <span>{{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
                         {% endif %}
+                      {% elif cell.assignment.assignment_type == 'incapacity' %}<strong>Incapacidad</strong>
                       {% else %}<strong>Descanso</strong><span>Libre</span>{% endif %}
                     {% else %}<span class="add-mark">+</span>{% endif %}
                   </a>

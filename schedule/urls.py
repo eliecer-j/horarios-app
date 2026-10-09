@@ -31,6 +31,7 @@ urlpatterns = [
     path("branches/<int:branch_id>/delete/", views.branch_delete, name="branch_delete"),
     path("analysis/", views.analysis, name="analysis"),
     path("analysis/unlock/", views.analysis_unlock, name="analysis_unlock"),
+    path("logs/", views.logs, name="logs"),
     path("exports/schedule/", views.schedule_export, name="schedule_export"),
     path("exports/analysis/", views.analysis_export, name="analysis_export"),
 ]

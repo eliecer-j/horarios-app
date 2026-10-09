@@ -13,7 +13,7 @@ def monday_of(day):
 def week_assignments(week_start):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT person_id, day, branch_id, start_time, end_time "
+            "SELECT person_id, day, branch_id, start_time, end_time, assignment_type "
             "FROM assignments WHERE week_start = %s",
             [week_start.isoformat()],
         )
@@ -22,8 +22,10 @@ def week_assignments(week_start):
                 "branch_id": branch_id,
                 "start_time": start_time,
                 "end_time": end_time,
+                "assignment_type": assignment_type,
             }
-            for person_id, day, branch_id, start_time, end_time in cursor.fetchall()
+            for person_id, day, branch_id, start_time, end_time, assignment_type
+            in cursor.fetchall()
         }
 
 
@@ -146,7 +148,7 @@ def save_assignment(week_start, person_id, day, form):
             ))
         return
 
-    if status == "rest":
+    if status in ("rest", "incapacity"):
         branch_id, start_time, end_time = None, None, None
     else:
         branch_id = form.cleaned_data["branch"].pk
@@ -159,11 +161,14 @@ def save_assignment(week_start, person_id, day, form):
         with connection.cursor() as cursor:
             cursor.execute(
                 "INSERT OR REPLACE INTO assignments "
-                "(week_start, person_id, day, branch_id, start_time, end_time) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                [week_start.isoformat(), person_id, day, branch_id, start_time, end_time],
+                "(week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                [
+                    week_start.isoformat(), person_id, day, branch_id, start_time,
+                    end_time, status,
+                ],
             )
-        if status == "rest" or (
+        if status in ("rest", "incapacity") or (
             status == "work"
             and current is not None
             and current["branch_id"] != branch_id
@@ -177,7 +182,7 @@ def assignments_between(start_date, end_date):
     earliest_week = (start_date - timedelta(days=6)).isoformat()
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT week_start, person_id, day, branch_id, start_time, end_time "
+            "SELECT week_start, person_id, day, branch_id, start_time, end_time, assignment_type "
             "FROM assignments WHERE week_start BETWEEN %s AND %s "
             "ORDER BY week_start, day, person_id",
             [earliest_week, end_date.isoformat()],
@@ -197,7 +202,9 @@ def assignments_between(start_date, end_date):
         )
     }
     assignments = []
-    for week_start, person_id, day, branch_id, start_time, end_time in rows:
+    for (
+        week_start, person_id, day, branch_id, start_time, end_time, assignment_type
+    ) in rows:
         assigned_date = date.fromisoformat(week_start) + timedelta(days=day)
         if start_date <= assigned_date <= end_date:
             actual_start_time, novelty_kind, observation = novelties.get(
@@ -206,7 +213,7 @@ def assignments_between(start_date, end_date):
             )
             assignments.append((
                 assigned_date, person_id, branch_id, start_time, end_time,
-                actual_start_time, novelty_kind, observation,
+                actual_start_time, novelty_kind, observation, assignment_type,
             ))
     return assignments
 

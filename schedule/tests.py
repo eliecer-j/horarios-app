@@ -7,10 +7,11 @@ from django.utils import timezone
 from django.urls import reverse
 from openpyxl import load_workbook
 
+from .exports import fortnight_workbook
 from .forms import AssignmentForm, LateArrivalForm
 from .metrics import assignment_period_metrics, shift_metrics, summarize_period
-from .models import AssignmentNovelty, Branch, Person, VacationPeriod
-from .services import assignments_between, clear_week, delete_branch, monday_of
+from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
+from .services import assignments_between, clear_week, delete_branch, monday_of, week_assignments
 from .templatetags.schedule_tags import capitalize
 
 
@@ -28,7 +29,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_schedule_page_renders_legacy_data(self):
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         response = self.client.get(reverse("schedule", args=[self.week_start.isoformat()]))
@@ -170,6 +172,132 @@ class LegacyDatabaseViewsTests(TestCase):
             )
             self.assertEqual(cursor.fetchone(), (None, None, None))
 
+    def test_incapacity_is_saved_displayed_and_counts_zero_worked_hours(self):
+        response = self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
+            {"status": "incapacity"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Incapacidad")
+        assignment = week_assignments(self.week_start)[(self.person.pk, 0)]
+        self.assertEqual(assignment["assignment_type"], "incapacity")
+        self.assertIsNone(assignment["branch_id"])
+        self.assertIsNone(assignment["start_time"])
+        self.assertIsNone(assignment["end_time"])
+        assignments = assignments_between(self.week_start, self.week_start)
+        self.assertEqual(assignments[0][8], "incapacity")
+        daily_metrics = assignment_period_metrics([self.person], assignments)
+        summaries, _ = summarize_period([self.person], assignments, daily_metrics)
+        self.assertEqual(daily_metrics, {})
+        self.assertEqual(summaries[self.person.pk]["worked"], 0)
+        workbook = load_workbook(
+            BytesIO(fortnight_workbook(self.week_start, self.week_start, [self.person])),
+            read_only=True,
+        )
+        self.assertEqual(workbook.active["C8"].value, "Incapacidad")
+        self.assertEqual(workbook.active["F8"].value, 0)
+
+        edit_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()]),
+            {"edit": f"{self.person.pk}-0"},
+        )
+        self.assertEqual(edit_response.context["edit_form"]["status"].value(), "incapacity")
+
+    def test_assignment_change_is_logged_with_ip_and_visible_in_logs(self):
+        response = self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
+            {
+                "status": "work",
+                "branch": self.branch.pk,
+                "start_time": "08:00",
+                "end_time": "16:00",
+            },
+            REMOTE_ADDR="203.0.113.7",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        entry = AuditLog.objects.get()
+        self.assertEqual(entry.ip_address, "203.0.113.7")
+        self.assertEqual(entry.action, "Turno guardado")
+        self.assertIn("Ana Torres", entry.details)
+        self.assertIn("Centro", entry.details)
+
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+        logs_response = self.client.get(reverse("logs"))
+        self.assertEqual(logs_response.status_code, 200)
+        self.assertContains(logs_response, "203.0.113.7")
+        self.assertContains(logs_response, "Turno guardado")
+
+    def test_assignment_update_logs_previous_and_new_shift(self):
+        assignment_url = reverse(
+            "assignment_save",
+            args=[self.week_start.isoformat(), self.person.pk, 0],
+        )
+        initial_response = self.client.post(
+            assignment_url,
+            {
+                "status": "work",
+                "branch": self.branch.pk,
+                "start_time": "08:00",
+                "end_time": "16:00",
+            },
+        )
+        self.assertEqual(initial_response.status_code, 200)
+
+        updated_response = self.client.post(
+            assignment_url,
+            {
+                "status": "work",
+                "branch": self.branch.pk,
+                "start_time": "09:00",
+                "end_time": "17:00",
+            },
+            REMOTE_ADDR="203.0.113.8",
+        )
+
+        self.assertEqual(updated_response.status_code, 200)
+        entry = AuditLog.objects.latest("pk")
+        self.assertEqual(entry.ip_address, "203.0.113.8")
+        self.assertEqual(entry.action, "Turno actualizado")
+        self.assertIn("Antes: Centro · 08:00–16:00", entry.details)
+        self.assertIn("Ahora: Centro · 09:00–17:00", entry.details)
+
+    def test_unchanged_assignment_does_not_create_change_log(self):
+        assignment_url = reverse(
+            "assignment_save",
+            args=[self.week_start.isoformat(), self.person.pk, 0],
+        )
+        payload = {
+            "status": "work",
+            "branch": self.branch.pk,
+            "start_time": "08:00",
+            "end_time": "16:00",
+        }
+        self.client.post(assignment_url, payload)
+        self.client.post(assignment_url, payload)
+
+        self.assertEqual(AuditLog.objects.count(), 1)
+
+    def test_logs_require_analysis_session(self):
+        response = self.client.get(reverse("logs"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("analysis_unlock"), response["Location"])
+
+    def test_invalid_assignment_is_not_logged(self):
+        response = self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
+            {"status": "work", "branch": self.branch.pk, "start_time": "", "end_time": ""},
+            REMOTE_ADDR="203.0.113.7",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(AuditLog.objects.exists())
+
     def test_people_page_uses_legacy_table(self):
         response = self.client.get(reverse("people"))
         self.assertEqual(response.status_code, 200)
@@ -298,7 +426,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_late_arrival_is_included_in_analysis_hours(self):
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         session = self.client.session
@@ -358,7 +487,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_absence_and_calamity_do_not_add_worked_hours(self):
         with connection.cursor() as cursor:
             cursor.executemany(
-                "INSERT INTO assignments VALUES (%s, %s, %s, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, %s, %s, '08:00', '16:00', 'work')",
                 [
                     (self.week_start.isoformat(), self.person.pk, day, self.branch.pk)
                     for day in (0, 1)
@@ -421,7 +551,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_changing_shift_times_preserves_existing_novelty(self):
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         AssignmentNovelty.objects.create(
@@ -467,7 +598,8 @@ class LegacyDatabaseViewsTests(TestCase):
         other_branch = Branch.objects.create(name="Norte", color="#2F6FED")
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         AssignmentNovelty.objects.create(
@@ -499,7 +631,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_removing_shift_archives_associated_novelty(self):
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         AssignmentNovelty.objects.create(
@@ -542,7 +675,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_selecting_no_novelty_archives_record_without_changing_shift(self):
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         AssignmentNovelty.objects.create(
@@ -595,7 +729,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_deleting_branch_archives_associated_novelties(self):
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         AssignmentNovelty.objects.create(
@@ -613,7 +748,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_history_can_be_deleted_for_one_cell_without_removing_current_novelty(self):
         with connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO assignments VALUES (%s, %s, 0, %s, '08:00', '16:00')",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
         AssignmentNovelty.objects.create(
@@ -785,7 +921,8 @@ class LegacyDatabaseViewsTests(TestCase):
         shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")
         with connection.cursor() as cursor:
             cursor.executemany(
-                "INSERT INTO assignments VALUES (%s, %s, %s, %s, '08:00', %s)",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, %s, %s, '08:00', %s, 'work')",
                 [
                     (self.week_start.isoformat(), self.person.pk, day, self.branch.pk, end_time)
                     for day, end_time in enumerate(shift_end_times)
@@ -848,7 +985,8 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_analysis_export_shows_daily_daytime_and_nighttime_overtime(self):
         with connection.cursor() as cursor:
             cursor.executemany(
-                "INSERT INTO assignments VALUES (%s, %s, %s, %s, %s, %s)",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'work')",
                 [
                     (
                         self.week_start.isoformat(), self.person.pk, 0,
@@ -885,7 +1023,8 @@ class LegacyDatabaseViewsTests(TestCase):
         shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")
         with connection.cursor() as cursor:
             cursor.executemany(
-                "INSERT INTO assignments VALUES (%s, %s, %s, %s, '08:00', %s)",
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, %s, %s, '08:00', %s, 'work')",
                 [
                     (self.week_start.isoformat(), self.person.pk, day, self.branch.pk, end_time)
                     for day, end_time in enumerate(shift_end_times)

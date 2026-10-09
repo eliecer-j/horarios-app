@@ -1,9 +1,11 @@
 import calendar
 import hmac
+import ipaddress
 from datetime import date, timedelta
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import Http404, HttpResponse
@@ -16,7 +18,7 @@ from django.views.decorators.http import require_POST
 from .exports import fortnight_workbook, workbook_response
 from .forms import AnalysisPasswordForm, AssignmentForm, BranchForm, LateArrivalForm, PersonForm
 from .metrics import DAY_SHIFT_END_HOUR, DAY_SHIFT_START_HOUR, summarize_period
-from .models import AssignmentNovelty, Branch, Person, VacationPeriod
+from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
 from .services import (
     assignments_between,
     archive_novelties,
@@ -40,6 +42,19 @@ from .services import (
 DAYS = ("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom")
 MONTHS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
 CONTENT_TEMPLATE = "content_template"
+
+
+def _record_change(request, action, details=""):
+    remote_addr = request.META.get("REMOTE_ADDR", "")
+    try:
+        ip_address = str(ipaddress.ip_address(remote_addr))
+    except (TypeError, ValueError):
+        ip_address = None
+    AuditLog.objects.create(
+        ip_address=ip_address,
+        action=action,
+        details=details,
+    )
 
 
 def _analysis_unlock_redirect(request):
@@ -116,7 +131,9 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
         available_days = [day for day in days if not is_on_vacation(person, day["date"])]
         assigned = [assignments.get((person.pk, day["index"])) for day in available_days]
         assigned = [value for value in assigned if value is not None]
-        rests = sum(1 for value in assigned if value["branch_id"] is None)
+        rests = sum(
+            1 for value in assigned if value["assignment_type"] == "rest"
+        )
         missing = len(available_days) - len(assigned)
         has_pending = missing > 0
         alert = bool(available_days) and rests == 0
@@ -211,7 +228,7 @@ def schedule(request, week_start):
             }
             if current:
                 initial = {
-                    "status": "rest" if current["branch_id"] is None else "work",
+                    "status": current["assignment_type"],
                     "branch": current["branch_id"],
                     "start_time": current["start_time"] or "",
                     "end_time": current["end_time"] or "",
@@ -300,6 +317,7 @@ def novelty_save(request, week_start, person_id, day):
                 archived_at__isnull=True,
             ))
             message = "Novedad conservada en el historial."
+            action = "Novedad archivada"
         else:
             AssignmentNovelty.objects.filter(
                 archived_at__isnull=True
@@ -314,6 +332,16 @@ def novelty_save(request, week_start, person_id, day):
                 },
             )
             message = "Novedad guardada."
+            action = "Novedad registrada"
+        person = Person.objects.get(pk=person_id)
+        novelty_kind = dict(AssignmentNovelty.KIND_CHOICES).get(
+            form.cleaned_data["kind"], form.cleaned_data["kind"]
+        )
+        _record_change(
+            request,
+            action,
+            f"{person.name} · {DAYS[day]} {week_start + timedelta(days=day):%d/%m/%Y} · {novelty_kind}",
+        )
         context = _schedule_context(
             week_start,
             message=message,
@@ -350,6 +378,13 @@ def novelty_history_delete(request, week_start, person_id, day):
         day=day,
         archived_at__isnull=False,
     ).delete()
+    if deleted_count:
+        person = Person.objects.get(pk=person_id)
+        _record_change(
+            request,
+            "Historial de novedades eliminado",
+            f"{person.name} · {DAYS[day]} {week_start + timedelta(days=day):%d/%m/%Y} · {deleted_count} registro(s)",
+        )
     message = (
         "Historial de la celda eliminado."
         if deleted_count
@@ -364,6 +399,28 @@ def novelty_history_delete(request, week_start, person_id, day):
     return render_screen(request, "schedule/content.html", context)
 
 
+def _assignment_log_description(assignment):
+    if assignment is None:
+        return "Sin asignación"
+    if assignment["branch_id"] is None:
+        return "Incapacidad" if assignment["assignment_type"] == "incapacity" else "Descanso"
+    branch_name = Branch.objects.filter(pk=assignment["branch_id"]).values_list(
+        "name", flat=True
+    ).first() or "Sucursal eliminada"
+    return f"{branch_name} · {assignment['start_time']}–{assignment['end_time']}"
+
+
+def _normalized_assignment(assignment):
+    if assignment is None:
+        return None
+    return (
+        assignment["branch_id"],
+        assignment["start_time"],
+        assignment["end_time"],
+        assignment["assignment_type"],
+    )
+
+
 @require_POST
 def assignment_save(request, week_start, person_id, day):
     week_start = _parse_week(week_start)
@@ -374,7 +431,56 @@ def assignment_save(request, week_start, person_id, day):
     form = AssignmentForm(request.POST)
     try:
         if form.is_valid():
+            previous = week_assignments(week_start).get((person_id, day))
+            if form.cleaned_data["status"] == "unassigned":
+                updated = None
+            elif form.cleaned_data["status"] == "rest":
+                updated = {"branch_id": None, "start_time": None, "end_time": None}
+                updated["assignment_type"] = "rest"
+            elif form.cleaned_data["status"] == "incapacity":
+                updated = {
+                    "branch_id": None,
+                    "start_time": None,
+                    "end_time": None,
+                    "assignment_type": "incapacity",
+                }
+            else:
+                updated = {
+                    "branch_id": form.cleaned_data["branch"].pk,
+                    "start_time": form.cleaned_data["start_time"],
+                    "end_time": form.cleaned_data["end_time"],
+                    "assignment_type": "work",
+                }
             save_assignment(week_start, person_id, day, form)
+            person = Person.objects.get(pk=person_id)
+            assigned_date = week_start + timedelta(days=day)
+            if _normalized_assignment(previous) != _normalized_assignment(updated):
+                if previous is not None and updated is not None:
+                    action = "Turno actualizado"
+                    assignment_details = (
+                        f"Antes: {_assignment_log_description(previous)} → "
+                        f"Ahora: {_assignment_log_description(updated)}"
+                    )
+                elif updated is None:
+                    action = "Turno eliminado"
+                    assignment_details = (
+                        f"Antes: {_assignment_log_description(previous)} → "
+                        "Ahora: Sin asignación"
+                    )
+                elif form.cleaned_data["status"] == "rest":
+                    action = "Descanso asignado"
+                    assignment_details = f"Antes: Sin asignación → Ahora: {_assignment_log_description(updated)}"
+                elif form.cleaned_data["status"] == "incapacity":
+                    action = "Incapacidad asignada"
+                    assignment_details = f"Antes: Sin asignación → Ahora: {_assignment_log_description(updated)}"
+                else:
+                    action = "Turno guardado"
+                    assignment_details = f"Antes: Sin asignación → Ahora: {_assignment_log_description(updated)}"
+                _record_change(
+                    request,
+                    action,
+                    f"{person.name} · {DAYS[day]} {assigned_date:%d/%m/%Y} · {assignment_details}",
+                )
             return render_screen(
                 request, "schedule/content.html",
                 _schedule_context(week_start, message="Turno actualizado."),
@@ -391,6 +497,7 @@ def assignment_save(request, week_start, person_id, day):
 def schedule_clear(request, week_start):
     week_start = _parse_week(week_start)
     clear_week(week_start)
+    _record_change(request, "Semana vaciada", f"Semana del {week_start:%d/%m/%Y}")
     return render_screen(
         request, "schedule/content.html",
         _schedule_context(week_start, message="Se vaciaron los turnos de la semana."),
@@ -418,6 +525,7 @@ def people(request):
         form = PersonForm(request.POST, person=person)
         if form.is_valid():
             cleaned = form.cleaned_data
+            is_new_person = person is None
             removed = 0
             with transaction.atomic():
                 if person is None:
@@ -442,6 +550,19 @@ def people(request):
                     removed = remove_vacation_assignments(
                         person, person.vacation_start, person.vacation_end
                     )
+            details = person.name
+            if person.vacation_start and person.vacation_end:
+                details += (
+                    f" · Vacaciones {person.vacation_start:%d/%m/%Y}–"
+                    f"{person.vacation_end:%d/%m/%Y}"
+                )
+            if removed:
+                details += f" · {removed} turno(s) retirado(s)"
+            _record_change(
+                request,
+                "Persona creada" if is_new_person else "Persona actualizada",
+                details,
+            )
             editing = None
             person = None
             form = PersonForm()
@@ -465,7 +586,9 @@ def people(request):
         ]
         week_values = [value for value in week_values if value is not None]
         person_item.week_work = sum(1 for value in week_values if value["branch_id"] is not None)
-        person_item.week_rest = sum(1 for value in week_values if value["branch_id"] is None)
+        person_item.week_rest = sum(
+            1 for value in week_values if value["assignment_type"] == "rest"
+        )
         person_item.display_name = person_display_name(person_item, duplicate_names)
     return render_screen(request, "people/content.html", {
         "people": people_list,
@@ -485,7 +608,9 @@ def person_delete(request, person_id):
         person = Person.objects.get(pk=person_id)
     except Person.DoesNotExist as exc:
         raise Http404("La persona solicitada no existe.") from exc
+    person_name = person.name
     delete_person(person)
+    _record_change(request, "Persona eliminada", person_name)
     if request.headers.get("HX-Request") != "true":
         return redirect("people")
     request.method = "GET"
@@ -505,6 +630,7 @@ def vacation_period_delete(request, person_id, period_id):
     except VacationPeriod.DoesNotExist as exc:
         raise Http404("El periodo de vacaciones solicitado no existe.") from exc
 
+    period_start, period_end = period.start_date, period.end_date
     with transaction.atomic():
         if (
             person.vacation_start == period.start_date
@@ -514,6 +640,11 @@ def vacation_period_delete(request, person_id, period_id):
             person.vacation_end = None
             person.save(update_fields=("vacation_start", "vacation_end"))
         period.delete()
+    _record_change(
+        request,
+        "Vacaciones eliminadas",
+        f"{person.name} · {period_start:%d/%m/%Y}–{period_end:%d/%m/%Y}",
+    )
 
     if request.headers.get("HX-Request") != "true":
         return redirect("people")
@@ -542,6 +673,7 @@ def branches(request):
                 raise Http404("La sucursal solicitada no existe.") from exc
         form = BranchForm(request.POST, branch=branch)
         if form.is_valid():
+            is_new_branch = branch is None
             branch = branch or Branch()
             branch.name = form.cleaned_data["name"]
             branch.color = form.cleaned_data["color"]
@@ -550,6 +682,11 @@ def branches(request):
             except IntegrityError:
                 form.add_error("name", "Ya existe una sucursal con ese nombre.")
             else:
+                _record_change(
+                    request,
+                    "Sucursal creada" if is_new_branch else "Sucursal actualizada",
+                    branch.name,
+                )
                 message = "Sucursal guardada."
                 branch = None
                 editing = None
@@ -585,13 +722,23 @@ def branch_delete(request, branch_id):
         branch = Branch.objects.get(pk=branch_id)
     except Branch.DoesNotExist as exc:
         raise Http404("La sucursal solicitada no existe.") from exc
+    branch_name = branch.name
     delete_branch(branch)
+    _record_change(request, "Sucursal eliminada", branch_name)
     if request.headers.get("HX-Request") == "true":
         request.method = "GET"
         request.GET = request.GET.copy()
         request.GET["message"] = "Sucursal eliminada junto con sus turnos."
         return branches(request)
     return redirect("branches")
+
+
+def logs(request):
+    if request.session.get("analysis_authenticated") is not True:
+        return _analysis_unlock_redirect(request)
+    paginator = Paginator(AuditLog.objects.all(), 50)
+    page_obj = paginator.get_page(request.GET.get("page"))
+    return render_screen(request, "logs/content.html", {"page_obj": page_obj})
 
 
 def analysis(request):

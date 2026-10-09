@@ -79,3 +79,14 @@ class AssignmentNovelty(models.Model):
                 name="assignment_novelty_day_range",
             ),
         ]
+
+
+class AuditLog(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    action = models.CharField(max_length=120)
+    details = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "audit_logs"
+        ordering = ("-created_at", "-pk")

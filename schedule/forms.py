@@ -104,6 +104,7 @@ class AssignmentForm(forms.Form):
     STATUS_CHOICES = (
         ("work", "Turno"),
         ("rest", "Descanso"),
+        ("incapacity", "Incapacidad"),
         ("unassigned", "Sin asignar"),
     )
     status = forms.ChoiceField(choices=STATUS_CHOICES, label="Tipo", initial="work")
