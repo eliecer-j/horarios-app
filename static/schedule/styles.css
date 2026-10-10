@@ -143,7 +143,7 @@ button, input, select { font: inherit; }
 .person-name > span:last-child { display: inline-block; max-width: 140px; vertical-align: middle; overflow-wrap: anywhere; }
 .avatar { width: 27px; height: 27px; display: inline-grid; place-items: center; margin-right: 8px; border-radius: 50%; color: hsl(var(--primary)); background: hsl(var(--primary) / .12); font-weight: 700; vertical-align: middle; }
 .avatar-large { width: 40px; height: 40px; flex: 0 0 40px; font-size: 17px; }
-.today-heading { color: hsl(var(--primary)) !important; }
+.today-heading { color: hsl(var(--primary)) !important; font-weight: 900 !important; font-size: 13px !important; font-style: italic !important; }
 .shift-cell { min-width: 102px; min-height: 53px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; border: 1px solid transparent; border-radius: 8px; font-size: 11px; }
 .shift-cell strong { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shift-cell > span:not(.add-mark) { color: hsl(var(--muted)); }
