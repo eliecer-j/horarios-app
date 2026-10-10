@@ -23,7 +23,10 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
     assignments_by_day = {}
     for assignment in assignments:
         assigned_date, pid, branch_id, start_time, end_time = assignment[:5]
-        assignments_by_day[(assigned_date, pid)] = (branch_id, start_time, end_time)
+        assignment_type = assignment[8] if len(assignment) > 8 else "work"
+        assignments_by_day[(assigned_date, pid)] = (
+            branch_id, start_time, end_time, assignment_type
+        )
 
     workbook = Workbook()
     sheet = workbook.active
@@ -96,11 +99,16 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
             elif assignment is None:
                 cell.value = ""
             else:
-                branch_id, start_time, end_time = assignment
+                branch_id, start_time, end_time, assignment_type = assignment
                 if branch_id is None:
-                    cell.value = "Descanso"
+                    cell.value = (
+                        "Incapacidad"
+                        if assignment_type == "incapacity"
+                        else "Descanso"
+                    )
                     cell.fill = rest_fill
-                    rest_count += 1
+                    if assignment_type == "rest":
+                        rest_count += 1
                 else:
                     branch_name, branch_color = branches.get(branch_id, ("Sucursal eliminada", "#E9ECEF"))
                     cell.value = f"{branch_name}\n{start_time}–{end_time}"

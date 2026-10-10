@@ -848,6 +848,41 @@ class LegacyDatabaseViewsTests(TestCase):
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
+    def test_incapacity_appears_in_both_excel_exports(self):
+        assignment_response = self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
+            {"status": "incapacity"},
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(assignment_response.status_code, 200)
+
+        schedule_response = self.client.get(
+            reverse("schedule_export"),
+            {"start": self.week_start.isoformat(), "end": self.week_start.isoformat()},
+        )
+        self.assertEqual(schedule_response.status_code, 200)
+        schedule_sheet = load_workbook(
+            BytesIO(schedule_response.content), read_only=True
+        ).active
+        self.assertEqual(schedule_sheet["B3"].value, "Incapacidad")
+        self.assertEqual(schedule_sheet["C3"].value, 0)
+
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+        month = self.week_start.strftime("%Y-%m")
+        fortnight = "1" if self.week_start.day <= 15 else "2"
+        analysis_response = self.client.get(
+            reverse("analysis_export"),
+            {"month": month, "fortnight": fortnight},
+        )
+        self.assertEqual(analysis_response.status_code, 200)
+        analysis_sheet = load_workbook(
+            BytesIO(analysis_response.content), read_only=True
+        ).active
+        self.assertEqual(analysis_sheet["C8"].value, "Incapacidad")
+        self.assertEqual(analysis_sheet["F8"].value, 0)
+
     def test_schedule_export_marks_all_vacation_periods(self):
         VacationPeriod.objects.create(
             person_id=self.person.pk,
