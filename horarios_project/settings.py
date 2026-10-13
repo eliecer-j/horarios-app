@@ -4,11 +4,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me-before-deploying")
-#DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
-DESBUG = False
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [
     "192.168.1.25",
-    "192.168.0.108",
     "127.0.0.1",
     "localhost",
     "testserver",
