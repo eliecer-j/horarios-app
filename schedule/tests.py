@@ -953,19 +953,20 @@ class LegacyDatabaseViewsTests(TestCase):
         )
 
     def test_analysis_nets_overtime_against_shorter_workdays(self):
+        week_start = monday_of(date(2026, 10, 8))
         shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")
         with connection.cursor() as cursor:
             cursor.executemany(
                 "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
                 "VALUES (%s, %s, %s, %s, '08:00', %s, 'work')",
                 [
-                    (self.week_start.isoformat(), self.person.pk, day, self.branch.pk, end_time)
+                    (week_start.isoformat(), self.person.pk, day, self.branch.pk, end_time)
                     for day, end_time in enumerate(shift_end_times)
                 ],
             )
 
         assignments = assignments_between(
-            self.week_start, self.week_start + timedelta(days=6)
+            week_start, week_start + timedelta(days=6)
         )
         summaries, totals = summarize_period([self.person], assignments)
         metric = summaries[self.person.pk]
@@ -980,8 +981,8 @@ class LegacyDatabaseViewsTests(TestCase):
         session = self.client.session
         session["analysis_authenticated"] = True
         session.save()
-        month = self.week_start.strftime("%Y-%m")
-        fortnight = "1" if self.week_start.day <= 15 else "2"
+        month = week_start.strftime("%Y-%m")
+        fortnight = "1" if week_start.day <= 15 else "2"
         response = self.client.get(
             reverse("analysis"),
             {"month": month, "fortnight": fortnight},
@@ -997,24 +998,31 @@ class LegacyDatabaseViewsTests(TestCase):
             {"month": month, "fortnight": fortnight},
         )
         workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
+        self.assertEqual(
+            tuple(workbook.active.cell(row=2, column=column).value for column in range(1, 7)),
+            (
+                "Nombre", "Días trabajados", "Horas trabajadas",
+                "Horas diurnas", "Horas nocturnas", "Horas extra",
+            ),
+        )
         self.assertAlmostEqual(workbook.active["C3"].value, 3379 / 60)
         self.assertAlmostEqual(workbook.active["D3"].value, 19 / 60)
-        self.assertAlmostEqual(workbook.active["E3"].value, 19 / 60)
-        self.assertEqual(workbook.active["F3"].value, 0)
+        self.assertEqual(workbook.active["E3"].value, 0)
+        self.assertAlmostEqual(workbook.active["F3"].value, 19 / 60)
         self.assertEqual(workbook.active["G7"].value, "Horas extra")
         self.assertEqual(workbook.active["H7"].value, "HD")
         self.assertEqual(workbook.active["I7"].value, "HN")
         self.assertAlmostEqual(
             sum(workbook.active.cell(row=row, column=7).value for row in range(8, 15)),
-            workbook.active["D3"].value,
+            workbook.active["F3"].value,
         )
         self.assertAlmostEqual(
             sum(workbook.active.cell(row=row, column=8).value for row in range(8, 15)),
-            workbook.active["E3"].value,
+            workbook.active["D3"].value,
         )
         self.assertAlmostEqual(
             sum(workbook.active.cell(row=row, column=9).value for row in range(8, 15)),
-            workbook.active["F3"].value,
+            workbook.active["E3"].value,
         )
 
     def test_analysis_export_shows_daily_daytime_and_nighttime_overtime(self):
@@ -1048,11 +1056,19 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(workbook_response.status_code, 200)
         workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
         sheet = workbook.active
+        self.assertEqual(
+            tuple(sheet.cell(row=2, column=column).value for column in range(1, 7)),
+            (
+                "Nombre", "Días trabajados", "Horas trabajadas",
+                "Horas diurnas", "Horas nocturnas", "Horas extra",
+            ),
+        )
+        self.assertEqual((sheet["D3"].value, sheet["E3"].value, sheet["F3"].value), (2, 2, 4))
         self.assertEqual((sheet["G8"].value, sheet["H8"].value, sheet["I8"].value), (2, 2, 0))
         self.assertEqual((sheet["G9"].value, sheet["H9"].value, sheet["I9"].value), (2, 0, 2))
-        self.assertEqual(sheet["D3"].value, sheet["G8"].value + sheet["G9"].value)
-        self.assertEqual(sheet["E3"].value, sheet["H8"].value + sheet["H9"].value)
-        self.assertEqual(sheet["F3"].value, sheet["I8"].value + sheet["I9"].value)
+        self.assertEqual(sheet["F3"].value, sheet["G8"].value + sheet["G9"].value)
+        self.assertEqual(sheet["D3"].value, sheet["H8"].value + sheet["H9"].value)
+        self.assertEqual(sheet["E3"].value, sheet["I8"].value + sheet["I9"].value)
 
     def test_absence_and_calamity_reduce_overtime_and_daily_quota(self):
         shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")

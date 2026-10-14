@@ -22,7 +22,7 @@ def fortnight_workbook(start_date, end_date, people):
     sheet.append([f"Análisis de turnos · {start_date:%d/%m/%Y} al {end_date:%d/%m/%Y}"])
     sheet.merge_cells("A1:F1")
     sheet["A1"].font = Font(bold=True, size=14)
-    sheet.append(["Nombre", "Días trabajados", "Horas trabajadas", "Horas extra", "Horas diurnas", "Horas nocturnas"])
+    sheet.append(["Nombre", "Días trabajados", "Horas trabajadas", "Horas diurnas", "Horas nocturnas", "Horas extra"])
     for cell in sheet[2]:
         cell.fill = header_fill
         cell.font = Font(color="FFFFFF", bold=True)
@@ -30,12 +30,12 @@ def fortnight_workbook(start_date, end_date, people):
     for person in people:
         metric = summaries[person.pk]
         sheet.append([
-            person.name, metric["days"], metric["worked"], metric["overtime"],
-            metric["daytime"], metric["nighttime"],
+            person.name, metric["days"], metric["worked"],
+            metric["daytime"], metric["nighttime"], metric["overtime"],
         ])
     sheet.append([
-        "TOTAL", totals["days"], totals["worked"], totals["overtime"],
-        totals["daytime"], totals["nighttime"],
+        "TOTAL", totals["days"], totals["worked"],
+        totals["daytime"], totals["nighttime"], totals["overtime"],
     ])
     for cell in sheet[sheet.max_row]:
         cell.fill = total_fill
