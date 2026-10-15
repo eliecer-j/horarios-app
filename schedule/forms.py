@@ -103,6 +103,7 @@ class BranchForm(forms.Form):
 class AssignmentForm(forms.Form):
     STATUS_CHOICES = (
         ("work", "Turno"),
+        ("split_shift", "Turno partido"),
         ("rest", "Descanso"),
         ("incapacity", "Incapacidad"),
         ("unassigned", "Sin asignar"),
@@ -111,7 +112,7 @@ class AssignmentForm(forms.Form):
     branch = forms.ModelChoiceField(queryset=Branch.objects.none(), required=False, label="Sucursal")
     start_time = forms.CharField(
         required=False,
-        label="Inicio",
+        label="Entrada 1",
         widget=forms.TextInput(attrs={
             "placeholder": "12:00",
             "maxlength": "5",
@@ -123,7 +124,7 @@ class AssignmentForm(forms.Form):
     )
     end_time = forms.CharField(
         required=False,
-        label="Fin",
+        label="Salida 1",
         widget=forms.TextInput(attrs={
             "placeholder": "17:00",
             "maxlength": "5",
@@ -133,10 +134,35 @@ class AssignmentForm(forms.Form):
             "autocomplete": "off",
         }),
     )
+    start_time_2 = forms.CharField(
+        required=False,
+        label="Entrada 2",
+        widget=forms.TextInput(attrs={
+            "placeholder": "17:00",
+            "maxlength": "5",
+            "inputmode": "numeric",
+            "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+            "title": "Usa el formato de 24 horas HH:MM, por ejemplo 17:00.",
+            "autocomplete": "off",
+        }),
+    )
+    end_time_2 = forms.CharField(
+        required=False,
+        label="Salida 2",
+        widget=forms.TextInput(attrs={
+            "placeholder": "18:30",
+            "maxlength": "5",
+            "inputmode": "numeric",
+            "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+            "title": "Usa el formato de 24 horas HH:MM, por ejemplo 18:30.",
+            "autocomplete": "off",
+        }),
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["branch"].queryset = Branch.objects.all()
+        self.fields["status"].widget.attrs["data-assignment-status-select"] = ""
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
 
@@ -152,9 +178,22 @@ class AssignmentForm(forms.Form):
             raise forms.ValidationError("Usa formato HH:MM.")
         return value
 
+    def clean_start_time_2(self):
+        value = self.cleaned_data.get("start_time_2", "").strip()
+        if value and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+            raise forms.ValidationError("Usa formato HH:MM.")
+        return value
+
+    def clean_end_time_2(self):
+        value = self.cleaned_data.get("end_time_2", "").strip()
+        if value and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
+            raise forms.ValidationError("Usa formato HH:MM.")
+        return value
+
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("status") == "work":
+        status = cleaned.get("status")
+        if status in ("work", "split_shift"):
             if not cleaned.get("branch"):
                 self.add_error("branch", "Selecciona una sucursal.")
             if not cleaned.get("start_time"):
@@ -163,6 +202,28 @@ class AssignmentForm(forms.Form):
                 self.add_error("end_time", "Indica la hora de fin.")
             if cleaned.get("start_time") and cleaned.get("start_time") == cleaned.get("end_time"):
                 self.add_error("end_time", "La hora de inicio y la hora de fin no pueden ser iguales.")
+        if status == "split_shift":
+            if not cleaned.get("start_time_2"):
+                self.add_error("start_time_2", "Indica la hora de la segunda entrada.")
+            if not cleaned.get("end_time_2"):
+                self.add_error("end_time_2", "Indica la hora de la segunda salida.")
+            if (
+                cleaned.get("start_time_2")
+                and cleaned.get("start_time_2") == cleaned.get("end_time_2")
+            ):
+                self.add_error(
+                    "end_time_2",
+                    "La hora de la segunda entrada y la segunda salida no pueden ser iguales.",
+                )
+            if (
+                cleaned.get("end_time")
+                and cleaned.get("start_time_2")
+                and cleaned["start_time_2"] <= cleaned["end_time"]
+            ):
+                self.add_error(
+                    "start_time_2",
+                    "La segunda entrada debe ser posterior a la primera salida.",
+                )
         return cleaned
 
 
@@ -191,7 +252,7 @@ class LateArrivalForm(forms.Form):
     )
     actual_start_time = forms.TimeField(
         required=False,
-        label="Hora real de llegada",
+        label="Llegada real 1",
         input_formats=["%H:%M"],
         widget=forms.TextInput(
             attrs={
@@ -201,6 +262,23 @@ class LateArrivalForm(forms.Form):
                 "inputmode": "numeric",
                 "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
                 "title": "Usa el formato de 24 horas HH:MM, por ejemplo 09:30.",
+                "autocomplete": "off",
+                "data-novelty-late-field": "",
+            },
+        ),
+    )
+    actual_start_time_2 = forms.TimeField(
+        required=False,
+        label="Llegada real 2",
+        input_formats=["%H:%M"],
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": "00:00",
+                "maxlength": "5",
+                "inputmode": "numeric",
+                "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+                "title": "Usa el formato de 24 horas HH:MM, por ejemplo 17:15.",
                 "autocomplete": "off",
                 "data-novelty-late-field": "",
             },
@@ -216,24 +294,50 @@ class LateArrivalForm(forms.Form):
         }),
     )
 
-    def __init__(self, *args, start_time, end_time, **kwargs):
+    def __init__(
+        self, *args, start_time, end_time, start_time_2=None, end_time_2=None,
+        split_shift=False, **kwargs
+    ):
         self.start_time = start_time
         self.end_time = end_time
+        self.start_time_2 = start_time_2
+        self.end_time_2 = end_time_2
+        self.split_shift = split_shift
         super().__init__(*args, **kwargs)
+        if not split_shift:
+            self.fields.pop("actual_start_time_2")
         self.fields["kind"].widget.attrs.update({
             "class": "form-control",
             "data-novelty-kind-select": "",
         })
 
     def clean_actual_start_time(self):
+        return self._clean_actual_time(
+            "actual_start_time",
+            self.start_time,
+            self.end_time,
+            required=not self.split_shift,
+        )
+
+    def clean_actual_start_time_2(self):
+        return self._clean_actual_time(
+            "actual_start_time_2",
+            self.start_time_2,
+            self.end_time_2,
+            required=False,
+        )
+
+    def _clean_actual_time(self, field_name, start_time, end_time, required):
         if self.cleaned_data.get("kind") != AssignmentNovelty.LATE_ARRIVAL:
             return None
-        raw_value = self.data.get("actual_start_time", "")
+        raw_value = self.data.get(field_name, "").strip()
+        if not raw_value and not required:
+            return None
         if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", raw_value):
             raise forms.ValidationError("Usa formato HH:MM, por ejemplo 09:30.")
-        actual_time = self.cleaned_data["actual_start_time"]
-        start_minutes = int(self.start_time[:2]) * 60 + int(self.start_time[3:])
-        end_minutes = int(self.end_time[:2]) * 60 + int(self.end_time[3:])
+        actual_time = self.cleaned_data[field_name]
+        start_minutes = int(start_time[:2]) * 60 + int(start_time[3:])
+        end_minutes = int(end_time[:2]) * 60 + int(end_time[3:])
         actual_minutes = actual_time.hour * 60 + actual_time.minute
         duration = (end_minutes - start_minutes) % (24 * 60)
         arrival_offset = (actual_minutes - start_minutes) % (24 * 60)
@@ -242,6 +346,19 @@ class LateArrivalForm(forms.Form):
                 "La hora real debe ser posterior al inicio del turno y anterior a su fin."
             )
         return actual_time
+
+    def clean(self):
+        cleaned = super().clean()
+        if (
+            self.split_shift
+            and cleaned.get("kind") == AssignmentNovelty.LATE_ARRIVAL
+            and not cleaned.get("actual_start_time")
+            and not cleaned.get("actual_start_time_2")
+        ):
+            raise forms.ValidationError(
+                "Indica al menos una de las dos horas reales de llegada."
+            )
+        return cleaned
 
     def clean_observation(self):
         return self.cleaned_data["observation"].strip()

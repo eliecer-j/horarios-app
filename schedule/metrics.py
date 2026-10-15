@@ -3,24 +3,38 @@ DAY_SHIFT_END_HOUR = 19
 
 
 def shift_metrics(start_time, end_time):
-    start_hour, start_minute = map(int, start_time.split(":"))
-    end_hour, end_minute = map(int, end_time.split(":"))
-    start = start_hour * 60 + start_minute
-    duration = end_hour * 60 + end_minute - start
-    if duration <= 0:
-        duration += 24 * 60
+    return shift_segments_metrics(((start_time, end_time),))
 
-    overtime_start = min(8 * 60, duration)
-    overtime_minutes = max(0, duration - overtime_start)
-    daytime_overtime = nighttime_overtime = 0
-    for offset in range(overtime_start, duration):
-        clock_minute = (start + offset) % (24 * 60)
-        if DAY_SHIFT_START_HOUR * 60 <= clock_minute < DAY_SHIFT_END_HOUR * 60:
-            daytime_overtime += 1
-        else:
-            nighttime_overtime += 1
 
-    return duration / 60, overtime_minutes / 60, daytime_overtime / 60, nighttime_overtime / 60
+def shift_segments_metrics(segments):
+    worked_minutes = 0
+    regular_minutes_remaining = 8 * 60
+    daytime_gross = nighttime_gross = 0
+    for start_time, end_time in segments:
+        start_hour, start_minute = map(int, start_time.split(":"))
+        end_hour, end_minute = map(int, end_time.split(":"))
+        start = start_hour * 60 + start_minute
+        end = end_hour * 60 + end_minute
+        duration = (end - start) % (24 * 60)
+        if duration == 0:
+            duration = 24 * 60
+        overtime_start = min(regular_minutes_remaining, duration)
+        for offset in range(overtime_start, duration):
+            clock_minute = (start + offset) % (24 * 60)
+            if DAY_SHIFT_START_HOUR * 60 <= clock_minute < DAY_SHIFT_END_HOUR * 60:
+                daytime_gross += 1
+            else:
+                nighttime_gross += 1
+        regular_minutes_remaining = max(0, regular_minutes_remaining - duration)
+        worked_minutes += duration
+
+    overtime = daytime_gross + nighttime_gross
+    return (
+        worked_minutes / 60,
+        overtime / 60,
+        daytime_gross / 60,
+        nighttime_gross / 60,
+    )
 
 
 def assignment_period_metrics(people, assignments):
@@ -29,11 +43,18 @@ def assignment_period_metrics(people, assignments):
         _, person_id, branch_id, start_time, end_time = assignment[:5]
         actual_start_time = assignment[5] if len(assignment) > 5 else None
         novelty_kind = assignment[6] if len(assignment) > 6 else None
+        assignment_type = assignment[8] if len(assignment) > 8 else "work"
+        start_time_2 = assignment[9] if len(assignment) > 9 else None
+        end_time_2 = assignment[10] if len(assignment) > 10 else None
+        actual_start_time_2 = assignment[11] if len(assignment) > 11 else None
         if branch_id is None or not start_time or not end_time:
             continue
         if novelty_kind in ("did_not_attend", "calamity"):
             continue
-        metrics = shift_metrics(actual_start_time or start_time, end_time)
+        segments = [(actual_start_time or start_time, end_time)]
+        if assignment_type == "split_shift" and start_time_2 and end_time_2:
+            segments.append((actual_start_time_2 or start_time_2, end_time_2))
+        metrics = shift_segments_metrics(segments)
         person_rows.setdefault(person_id, []).append({
             "index": index,
             "worked": round(metrics[0] * 60),

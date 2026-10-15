@@ -63,8 +63,11 @@ def fortnight_workbook(start_date, end_date, people):
         novelty_kind = assignment[6] if len(assignment) > 6 else None
         observation = assignment[7] if len(assignment) > 7 else ""
         assignment_type = assignment[8] if len(assignment) > 8 else "work"
+        start_time_2 = assignment[9] if len(assignment) > 9 else None
+        end_time_2 = assignment[10] if len(assignment) > 10 else None
+        actual_start_time_2 = assignment[11] if len(assignment) > 11 else None
         metrics = daily_metrics.get(assignment_index, {
-            "overtime": 0, "daytime": 0, "nighttime": 0,
+            "worked": 0, "overtime": 0, "daytime": 0, "nighttime": 0,
         })
         person = people_by_id.get(person_id)
         if person is None:
@@ -78,27 +81,28 @@ def fortnight_workbook(start_date, end_date, people):
             ]
         else:
             effective_start_time = actual_start_time or start_time
+            display_start_time = effective_start_time
+            display_end_time = end_time
+            if assignment_type == "split_shift" and start_time_2 and end_time_2:
+                display_start_time += f" / {actual_start_time_2 or start_time_2}"
+                display_end_time += f" / {end_time_2}"
             if novelty_kind in ("did_not_attend", "calamity"):
-                hours = 0
+                worked_hours = 0
                 if novelty_kind == "did_not_attend":
                     novelty_label = "No se presentó"
                 else:
                     novelty_label = "Calamidad"
                 branch_name = f"{branches.get(branch_id, 'Sucursal eliminada')} · {novelty_label}"
             else:
-                hours = (int(end_time[:2]) * 60 + int(end_time[3:])) - (
-                    int(effective_start_time[:2]) * 60 + int(effective_start_time[3:])
-                )
-                if hours <= 0:
-                    hours += 24 * 60
+                worked_hours = metrics["worked"] / 60
                 branch_name = branches.get(branch_id, "Sucursal eliminada")
             row = [
                 person_display_name(person, duplicate_names),
                 f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}",
                 branch_name,
-                effective_start_time,
-                end_time,
-                hours / 60,
+                display_start_time,
+                display_end_time,
+                worked_hours,
                 metrics["overtime"] / 60,
                 metrics["daytime"] / 60,
                 metrics["nighttime"] / 60,

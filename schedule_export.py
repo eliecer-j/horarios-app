@@ -24,8 +24,10 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
     for assignment in assignments:
         assigned_date, pid, branch_id, start_time, end_time = assignment[:5]
         assignment_type = assignment[8] if len(assignment) > 8 else "work"
+        start_time_2 = assignment[9] if len(assignment) > 9 else None
+        end_time_2 = assignment[10] if len(assignment) > 10 else None
         assignments_by_day[(assigned_date, pid)] = (
-            branch_id, start_time, end_time, assignment_type
+            branch_id, start_time, end_time, assignment_type, start_time_2, end_time_2
         )
 
     workbook = Workbook()
@@ -99,7 +101,10 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
             elif assignment is None:
                 cell.value = ""
             else:
-                branch_id, start_time, end_time, assignment_type = assignment
+                (
+                    branch_id, start_time, end_time, assignment_type,
+                    start_time_2, end_time_2,
+                ) = assignment
                 if branch_id is None:
                     cell.value = (
                         "Incapacidad"
@@ -111,7 +116,10 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
                         rest_count += 1
                 else:
                     branch_name, branch_color = branches.get(branch_id, ("Sucursal eliminada", "#E9ECEF"))
-                    cell.value = f"{branch_name}\n{start_time}–{end_time}"
+                    time_range = f"{start_time}–{end_time}"
+                    if start_time_2 and end_time_2:
+                        time_range += f" / {start_time_2}–{end_time_2}"
+                    cell.value = f"{branch_name}\n{time_range}"
                     color = str(branch_color).lstrip("#")
                     if len(color) == 6:
                         cell.fill = PatternFill("solid", fgColor=color.upper())

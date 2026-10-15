@@ -63,6 +63,7 @@ class AssignmentNovelty(models.Model):
     day = models.PositiveSmallIntegerField()
     kind = models.CharField(max_length=24, choices=KIND_CHOICES, default=LATE_ARRIVAL)
     actual_start_time = models.TimeField(null=True, blank=True)
+    actual_start_time_2 = models.TimeField(null=True, blank=True)
     observation = models.TextField(blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
 

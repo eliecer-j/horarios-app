@@ -103,18 +103,20 @@
                     {% if cell.assignment %}
                       {% if cell.assignment.branch_id %}
                         {% if novelties_mode %}
-                          <span class="novelty-shift-context">{{ cell.branch.name|default:"Sucursal eliminada" }} · {{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
+                          <span class="novelty-shift-context">{{ cell.branch.name|default:"Sucursal eliminada" }} · {{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}{% if cell.assignment.start_time_2 and cell.assignment.end_time_2 %} / {{ cell.assignment.start_time_2 }}–{{ cell.assignment.end_time_2 }}{% endif %}</span>
                           {% if cell.novelty %}
                             <span class="novelty-badge{% if cell.novelty.kind == 'late_arrival' %} novelty-badge-late-arrival{% endif %}">
                               {% if cell.novelty.kind == 'late_arrival' %}Llegada tarde{% elif cell.novelty.kind == 'did_not_attend' %}No se presentó{% elif cell.novelty.kind == 'calamity' %}Calamidad{% endif %}
                             </span>
+                            {% if cell.novelty.actual_start_time %}<span class="novelty-observation">Llegada 1: {{ cell.novelty.actual_start_time }}</span>{% endif %}
+                            {% if cell.novelty.actual_start_time_2 %}<span class="novelty-observation">Llegada 2: {{ cell.novelty.actual_start_time_2 }}</span>{% endif %}
                             {% if cell.novelty.observation %}<span class="novelty-observation">{{ cell.novelty.observation }}</span>{% endif %}
                           {% else %}
                             <span class="novelty-empty-prompt">＋ Registrar novedad</span>
                           {% endif %}
                         {% else %}
                           <strong>{{ cell.branch.name|default:"Sucursal eliminada" }}</strong>
-                          <span>{{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}</span>
+                          <span>{{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}{% if cell.assignment.start_time_2 and cell.assignment.end_time_2 %} / {{ cell.assignment.start_time_2 }}–{{ cell.assignment.end_time_2 }}{% endif %}</span>
                         {% endif %}
                       {% elif cell.assignment.assignment_type == 'incapacity' %}<strong>Incapacidad</strong>
                       {% else %}<strong>Descanso</strong><span>Libre</span>{% endif %}
@@ -129,6 +131,7 @@
                           Histórico · {% if historical.kind == 'late_arrival' %}Llegada tarde{% elif historical.kind == 'did_not_attend' %}No se presentó{% elif historical.kind == 'calamity' %}Calamidad{% endif %}
                         </span>
                         {% if historical.actual_start_time %}<span class="novelty-observation">Llegada: {{ historical.actual_start_time }}</span>{% endif %}
+                        {% if historical.actual_start_time_2 %}<span class="novelty-observation">Llegada 2: {{ historical.actual_start_time_2 }}</span>{% endif %}
                         {% if historical.observation %}<span class="novelty-observation">{{ historical.observation }}</span>{% endif %}
                         <span class="novelty-history-date">Cancelada {{ historical.archived_at|date:'d/m/Y H:i' }}</span>
                       </div>
@@ -166,12 +169,12 @@
             {% if novelty_form.non_field_errors %}<div class="field-errors">{{ novelty_form.non_field_errors }}</div>{% endif %}
             <div class="form-grid">
               {% for field in novelty_form %}
-                <div class="form-field wide-field" {% if field.name == 'actual_start_time' %}data-novelty-time-group{% endif %}>
+                <div class="form-field wide-field" {% if field.name == 'actual_start_time' or field.name == 'actual_start_time_2' %}data-novelty-time-group{% endif %}>
                   {{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
                 </div>
               {% endfor %}
             </div>
-            <p class="form-hint">La hora solo se solicita para una llegada tarde. “No se presentó” y “Calamidad” se registran con 0 horas. La observación es opcional.</p>
+            <p class="form-hint">La hora solo se solicita para una llegada tarde; en un turno partido, basta con registrar una de las dos llegadas. “No se presentó” y “Calamidad” se registran con 0 horas. La observación es opcional.</p>
             <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar novedad</button></div>
           </form>
         {% else %}
@@ -181,11 +184,12 @@
             {% if edit_form.non_field_errors %}<div class="field-errors">{{ edit_form.non_field_errors }}</div>{% endif %}
             <div class="form-grid">
               {% for field in edit_form %}
-                <div class="form-field {% if field.name == 'branch' or field.name == 'status' %}wide-field{% endif %}">
+                <div class="form-field {% if field.name == 'branch' or field.name == 'status' %}wide-field{% endif %}"{% if field.name == 'start_time_2' or field.name == 'end_time_2' %} data-split-shift-field{% if edit_form.status.value != 'split_shift' %} hidden{% endif %}{% endif %}>
                   {{ field.label_tag }}{{ field }}{% if field.errors %}<div class="field-errors">{{ field.errors }}</div>{% endif %}
                 </div>
               {% endfor %}
             </div>
+            <p class="form-hint">En un turno partido, completa Entrada 1, Salida 1, Entrada 2 y Salida 2. El tiempo entre las dos salidas y entradas no se cuenta como trabajado.</p>
             <p class="form-hint">Formato de 24 horas HH:MM; por ejemplo 12:00–17:00. También puedes indicar un turno nocturno, como 22:00–06:00.</p>
             <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar turno</button></div>
           </form>

@@ -232,6 +232,8 @@ def schedule(request, week_start):
                     "branch": current["branch_id"],
                     "start_time": current["start_time"] or "",
                     "end_time": current["end_time"] or "",
+                    "start_time_2": current["start_time_2"] or "",
+                    "end_time_2": current["end_time_2"] or "",
                 }
             form = AssignmentForm(initial=initial)
         except (ValueError, Person.DoesNotExist):
@@ -267,12 +269,16 @@ def novelties_week(request, week_start):
                 initial = {
                     "kind": current_novelty["kind"] if current_novelty else AssignmentNovelty.LATE_ARRIVAL,
                     "actual_start_time": current_novelty["actual_start_time"] if current_novelty else "",
+                    "actual_start_time_2": current_novelty["actual_start_time_2"] if current_novelty else "",
                     "observation": current_novelty["observation"] if current_novelty else "",
                 }
                 form = LateArrivalForm(
                     initial=initial,
                     start_time=assignment["start_time"],
                     end_time=assignment["end_time"],
+                    start_time_2=assignment["start_time_2"],
+                    end_time_2=assignment["end_time_2"],
+                    split_shift=assignment["assignment_type"] == "split_shift",
                 )
         except (ValueError, Person.DoesNotExist):
             raise Http404("La asignación solicitada no existe.")
@@ -307,6 +313,9 @@ def novelty_save(request, week_start, person_id, day):
         request.POST,
         start_time=assignment["start_time"],
         end_time=assignment["end_time"],
+        start_time_2=assignment["start_time_2"],
+        end_time_2=assignment["end_time_2"],
+        split_shift=assignment["assignment_type"] == "split_shift",
     )
     if form.is_valid():
         if form.cleaned_data["kind"] == LateArrivalForm.NO_NOVELTY:
@@ -328,6 +337,7 @@ def novelty_save(request, week_start, person_id, day):
                 defaults={
                     "kind": form.cleaned_data["kind"],
                     "actual_start_time": form.cleaned_data["actual_start_time"],
+                    "actual_start_time_2": form.cleaned_data.get("actual_start_time_2"),
                     "observation": form.cleaned_data["observation"],
                 },
             )
@@ -407,7 +417,10 @@ def _assignment_log_description(assignment):
     branch_name = Branch.objects.filter(pk=assignment["branch_id"]).values_list(
         "name", flat=True
     ).first() or "Sucursal eliminada"
-    return f"{branch_name} · {assignment['start_time']}–{assignment['end_time']}"
+    time_range = f"{assignment['start_time']}–{assignment['end_time']}"
+    if assignment.get("start_time_2") and assignment.get("end_time_2"):
+        time_range += f" / {assignment['start_time_2']}–{assignment['end_time_2']}"
+    return f"{branch_name} · {time_range}"
 
 
 def _normalized_assignment(assignment):
@@ -418,6 +431,8 @@ def _normalized_assignment(assignment):
         assignment["start_time"],
         assignment["end_time"],
         assignment["assignment_type"],
+        assignment.get("start_time_2"),
+        assignment.get("end_time_2"),
     )
 
 
@@ -443,13 +458,23 @@ def assignment_save(request, week_start, person_id, day):
                     "start_time": None,
                     "end_time": None,
                     "assignment_type": "incapacity",
+                    "start_time_2": None,
+                    "end_time_2": None,
                 }
             else:
+                status = form.cleaned_data["status"]
+                is_split_shift = status == "split_shift"
                 updated = {
                     "branch_id": form.cleaned_data["branch"].pk,
                     "start_time": form.cleaned_data["start_time"],
                     "end_time": form.cleaned_data["end_time"],
-                    "assignment_type": "work",
+                    "assignment_type": status,
+                    "start_time_2": (
+                        form.cleaned_data["start_time_2"] if is_split_shift else None
+                    ),
+                    "end_time_2": (
+                        form.cleaned_data["end_time_2"] if is_split_shift else None
+                    ),
                 }
             save_assignment(week_start, person_id, day, form)
             person = Person.objects.get(pk=person_id)

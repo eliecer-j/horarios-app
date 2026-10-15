@@ -83,6 +83,7 @@
     document.body.addEventListener("htmx:afterSettle", function () {
       updateActiveNavigation();
       updateNoveltyFields();
+      updateSplitShiftFields();
       const dialog = document.getElementById("assignment-dialog");
       if (dialog && !dialog.open) dialog.showModal();
       const personForm = document.getElementById("person-form-card");
@@ -100,6 +101,7 @@
     document.addEventListener("DOMContentLoaded", function () {
       updateActiveNavigation();
       updateNoveltyFields();
+      updateSplitShiftFields();
       const dialog = document.getElementById("assignment-dialog");
       if (dialog && !dialog.open) dialog.showModal();
       const personForm = document.getElementById("person-form-card");
@@ -107,17 +109,62 @@
     });
     function updateNoveltyFields() {
       const kind = document.querySelector("[data-novelty-kind-select]");
-      const time = document.querySelector("[data-novelty-late-field]");
-      const group = time && time.closest("[data-novelty-time-group]");
-      if (!kind || !time || !group) return;
+      if (!kind) return;
       const isLateArrival = kind.value === "late_arrival";
-      group.hidden = !isLateArrival;
-      time.required = isLateArrival;
+      const times = Array.from(document.querySelectorAll("[data-novelty-late-field]"));
+      const splitShift = times.some(function (time) {
+        return time.name === "actual_start_time_2";
+      });
+      times.forEach(function (time) {
+        const group = time.closest("[data-novelty-time-group]");
+        if (!group) return;
+        group.hidden = !isLateArrival;
+        time.required = isLateArrival && !splitShift;
+        time.setCustomValidity("");
+      });
       kind.classList.toggle("novelty-late-arrival-selected", isLateArrival);
+    }
+    function validateNoveltyArrivalTimes(form) {
+      const kind = form.querySelector("[data-novelty-kind-select]");
+      const times = Array.from(form.querySelectorAll("[data-novelty-late-field]"));
+      if (!kind || kind.value !== "late_arrival" || times.length < 2) return true;
+      const missingBoth = times.every(function (time) {
+        return !time.value.trim();
+      });
+      times.forEach(function (time) {
+        time.setCustomValidity(
+          missingBoth ? "Indica al menos una de las dos horas reales de llegada." : ""
+        );
+      });
+      if (missingBoth) times[0].reportValidity();
+      return !missingBoth;
+    }
+    function updateSplitShiftFields() {
+      const status = document.querySelector("[data-assignment-status-select]");
+      if (!status) return;
+      document.querySelectorAll("[data-split-shift-field]").forEach(function (group) {
+        group.hidden = status.value !== "split_shift";
+      });
     }
     document.body.addEventListener("change", function (event) {
       if (event.target.matches("[data-novelty-kind-select]")) updateNoveltyFields();
+      if (event.target.matches("[data-assignment-status-select]")) updateSplitShiftFields();
     });
+    document.body.addEventListener("input", function (event) {
+      if (event.target.matches("[data-novelty-late-field]")) {
+        const form = event.target.closest("form");
+        if (form) validateNoveltyArrivalTimes(form);
+      }
+    });
+    document.body.addEventListener("submit", function (event) {
+      if (
+        event.target.matches("form")
+        && !validateNoveltyArrivalTimes(event.target)
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
     window.addEventListener("popstate", updateActiveNavigation);
     document.body.addEventListener("htmx:historyRestore", updateActiveNavigation);
   </script>

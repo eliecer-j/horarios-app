@@ -39,10 +39,10 @@ Se puede seleccionar otra base de datos con la variable `DATABASE_PATH`. Antes d
 
 ## Funcionalidad
 
-- Navegar semanas, filtrar turnos pendientes y sin descanso y editar asignaciones, descansos o vacaciones.
+- Navegar semanas, filtrar turnos pendientes y sin descanso y editar turnos normales o partidos (dos entradas y dos salidas), descansos o vacaciones.
 - Administrar personas, DNI opcional, sucursales y vacaciones.
 - Registrar en Novedades llegadas tarde, ausencias y calamidades, con observación opcional para estas dos últimas, protegidas por la misma contraseña que Análisis.
 - Descargar grillas por rango de fechas y análisis quincenales en Excel.
-- Consultar reportes de horas trabajadas, extra, diurnas y nocturnas; los turnos con llegada tarde se calculan desde la hora real registrada.
+- Consultar reportes de horas trabajadas, extra, diurnas y nocturnas; en los turnos partidos no se cuenta el intervalo entre jornadas, y las llegadas tarde se calculan desde la hora real registrada.
 
 Tailwind y HTMX se cargan desde CDN en las plantillas, por lo que el navegador necesita conexión a Internet para obtener esas dos bibliotecas.

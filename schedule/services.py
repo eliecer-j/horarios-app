@@ -13,7 +13,8 @@ def monday_of(day):
 def week_assignments(week_start):
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT person_id, day, branch_id, start_time, end_time, assignment_type "
+            "SELECT person_id, day, branch_id, start_time, end_time, assignment_type, "
+            "start_time_2, end_time_2 "
             "FROM assignments WHERE week_start = %s",
             [week_start.isoformat()],
         )
@@ -23,8 +24,13 @@ def week_assignments(week_start):
                 "start_time": start_time,
                 "end_time": end_time,
                 "assignment_type": assignment_type,
+                "start_time_2": start_time_2,
+                "end_time_2": end_time_2,
             }
-            for person_id, day, branch_id, start_time, end_time, assignment_type
+            for (
+                person_id, day, branch_id, start_time, end_time,
+                assignment_type, start_time_2, end_time_2,
+            )
             in cursor.fetchall()
         }
 
@@ -36,6 +42,10 @@ def week_novelties(week_start):
             "actual_start_time": (
                 novelty.actual_start_time.strftime("%H:%M")
                 if novelty.actual_start_time else ""
+            ),
+            "actual_start_time_2": (
+                novelty.actual_start_time_2.strftime("%H:%M")
+                if novelty.actual_start_time_2 else ""
             ),
             "observation": novelty.observation,
         }
@@ -55,6 +65,10 @@ def week_historical_novelties(week_start):
             "actual_start_time": (
                 novelty.actual_start_time.strftime("%H:%M")
                 if novelty.actual_start_time else ""
+            ),
+            "actual_start_time_2": (
+                novelty.actual_start_time_2.strftime("%H:%M")
+                if novelty.actual_start_time_2 else ""
             ),
             "observation": novelty.observation,
             "archived_at": novelty.archived_at,
@@ -149,11 +163,18 @@ def save_assignment(week_start, person_id, day, form):
         return
 
     if status in ("rest", "incapacity"):
-        branch_id, start_time, end_time = None, None, None
+        branch_id, start_time, end_time, start_time_2, end_time_2 = (
+            None, None, None, None, None
+        )
     else:
         branch_id = form.cleaned_data["branch"].pk
         start_time = form.cleaned_data["start_time"]
         end_time = form.cleaned_data["end_time"]
+        if status == "split_shift":
+            start_time_2 = form.cleaned_data["start_time_2"]
+            end_time_2 = form.cleaned_data["end_time_2"]
+        else:
+            start_time_2 = end_time_2 = None
         if start_time == end_time:
             raise ValueError("La hora de inicio y la hora de fin no pueden ser iguales.")
 
@@ -161,11 +182,12 @@ def save_assignment(week_start, person_id, day, form):
         with connection.cursor() as cursor:
             cursor.execute(
                 "INSERT OR REPLACE INTO assignments "
-                "(week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "(week_start, person_id, day, branch_id, start_time, end_time, assignment_type, "
+                "start_time_2, end_time_2) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 [
                     week_start.isoformat(), person_id, day, branch_id, start_time,
-                    end_time, status,
+                    end_time, status, start_time_2, end_time_2,
                 ],
             )
         if status in ("rest", "incapacity") or (
@@ -182,7 +204,8 @@ def assignments_between(start_date, end_date):
     earliest_week = (start_date - timedelta(days=6)).isoformat()
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT week_start, person_id, day, branch_id, start_time, end_time, assignment_type "
+            "SELECT week_start, person_id, day, branch_id, start_time, end_time, assignment_type, "
+            "start_time_2, end_time_2 "
             "FROM assignments WHERE week_start BETWEEN %s AND %s "
             "ORDER BY week_start, day, person_id",
             [earliest_week, end_date.isoformat()],
@@ -194,6 +217,8 @@ def assignments_between(start_date, end_date):
             if novelty.actual_start_time else None,
             novelty.kind,
             novelty.observation,
+            novelty.actual_start_time_2.strftime("%H:%M")
+            if novelty.actual_start_time_2 else None,
         )
         for novelty in AssignmentNovelty.objects.filter(
             week_start__gte=date.fromisoformat(earliest_week),
@@ -203,17 +228,19 @@ def assignments_between(start_date, end_date):
     }
     assignments = []
     for (
-        week_start, person_id, day, branch_id, start_time, end_time, assignment_type
+        week_start, person_id, day, branch_id, start_time, end_time, assignment_type,
+        start_time_2, end_time_2,
     ) in rows:
         assigned_date = date.fromisoformat(week_start) + timedelta(days=day)
         if start_date <= assigned_date <= end_date:
-            actual_start_time, novelty_kind, observation = novelties.get(
+            actual_start_time, novelty_kind, observation, actual_start_time_2 = novelties.get(
                 (date.fromisoformat(week_start), person_id, day),
-                (None, None, ""),
+                (None, None, "", None),
             )
             assignments.append((
                 assigned_date, person_id, branch_id, start_time, end_time,
                 actual_start_time, novelty_kind, observation, assignment_type,
+                start_time_2, end_time_2, actual_start_time_2,
             ))
     return assignments
 

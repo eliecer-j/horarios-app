@@ -332,6 +332,7 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, '<dialog id="assignment-dialog"', html=False)
         self.assertContains(response, 'placeholder="12:00"', html=False)
         self.assertContains(response, 'placeholder="17:00"', html=False)
+        self.assertContains(response, "data-split-shift-field hidden", html=False)
 
     def test_assignment_form_accepts_only_24_hour_hhmm(self):
         valid_form = AssignmentForm(data={
@@ -350,6 +351,114 @@ class LegacyDatabaseViewsTests(TestCase):
         })
         self.assertFalse(invalid_form.is_valid())
         self.assertIn("Usa formato HH:MM.", invalid_form.errors["start_time"])
+
+    def test_split_shift_form_requires_two_ordered_time_ranges(self):
+        form = AssignmentForm(data={
+            "status": "split_shift",
+            "branch": self.branch.pk,
+            "start_time": "10:00",
+            "end_time": "14:00",
+            "start_time_2": "17:00",
+            "end_time_2": "18:30",
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+
+        missing_second_range = AssignmentForm(data={
+            "status": "split_shift",
+            "branch": self.branch.pk,
+            "start_time": "10:00",
+            "end_time": "14:00",
+        })
+        self.assertFalse(missing_second_range.is_valid())
+        self.assertIn("start_time_2", missing_second_range.errors)
+        self.assertIn("end_time_2", missing_second_range.errors)
+
+        overlapping_ranges = AssignmentForm(data={
+            "status": "split_shift",
+            "branch": self.branch.pk,
+            "start_time": "10:00",
+            "end_time": "14:00",
+            "start_time_2": "13:00",
+            "end_time_2": "18:30",
+        })
+        self.assertFalse(overlapping_ranges.is_valid())
+        self.assertIn("posterior a la primera salida", overlapping_ranges.errors["start_time_2"][0])
+
+    def test_split_shift_saves_displays_and_excludes_break_from_analysis(self):
+        week_start = monday_of(date(2026, 10, 7))
+        assignment_url = reverse(
+            "assignment_save",
+            args=[week_start.isoformat(), self.person.pk, 0],
+        )
+        response = self.client.post(assignment_url, {
+            "status": "split_shift",
+            "branch": self.branch.pk,
+            "start_time": "10:00",
+            "end_time": "14:00",
+            "start_time_2": "17:00",
+            "end_time_2": "18:30",
+        })
+        self.assertEqual(response.status_code, 200)
+
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT assignment_type, start_time, end_time, start_time_2, end_time_2 "
+                "FROM assignments WHERE week_start = %s AND person_id = %s AND day = 0",
+                [week_start.isoformat(), self.person.pk],
+            )
+            self.assertEqual(
+                cursor.fetchone(),
+                ("split_shift", "10:00", "14:00", "17:00", "18:30"),
+            )
+
+        schedule_response = self.client.get(
+            reverse("schedule", args=[week_start.isoformat()])
+        )
+        self.assertContains(schedule_response, "10:00–14:00 / 17:00–18:30")
+        split_shift_editor = self.client.get(
+            reverse("schedule", args=[week_start.isoformat()]),
+            {"edit": f"{self.person.pk}-0"},
+        )
+        self.assertContains(split_shift_editor, "data-split-shift-field>", html=False)
+        self.assertNotContains(
+            split_shift_editor, "data-split-shift-field hidden", html=False
+        )
+
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+        analysis_response = self.client.get(
+            reverse("analysis"),
+            {"month": "2026-10", "fortnight": "1"},
+        )
+        self.assertEqual(analysis_response.status_code, 200)
+        self.assertAlmostEqual(
+            analysis_response.context["summaries"][self.person.pk]["worked"],
+            5.5,
+        )
+
+        export_response = self.client.get(
+            reverse("analysis_export"),
+            {"month": "2026-10", "fortnight": "1"},
+        )
+        workbook = load_workbook(BytesIO(export_response.content), read_only=True)
+        sheet = workbook.active
+        self.assertAlmostEqual(sheet["C3"].value, 5.5)
+        self.assertEqual(sheet["D8"].value, "10:00 / 17:00")
+        self.assertEqual(sheet["E8"].value, "14:00 / 18:30")
+        self.assertAlmostEqual(sheet["F8"].value, 5.5)
+
+        schedule_export_response = self.client.get(
+            reverse("schedule_export"),
+            {"start": week_start.isoformat(), "end": week_start.isoformat()},
+        )
+        schedule_workbook = load_workbook(
+            BytesIO(schedule_export_response.content), read_only=True
+        )
+        self.assertEqual(
+            schedule_workbook.active["B3"].value,
+            "Centro\n10:00–14:00 / 17:00–18:30",
+        )
 
     @override_settings(ANALYSIS_PASSWORD="test-password")
     def test_analysis_page_renders_after_unlock(self):
@@ -836,6 +945,113 @@ class LegacyDatabaseViewsTests(TestCase):
             end_time="06:00",
         )
         self.assertTrue(overnight_form.is_valid())
+
+        split_shift_times = {
+            "kind": AssignmentNovelty.LATE_ARRIVAL,
+            "actual_start_time": "",
+            "actual_start_time_2": "",
+        }
+        split_shift_form = LateArrivalForm(
+            data=split_shift_times,
+            start_time="10:00",
+            end_time="14:00",
+            start_time_2="17:00",
+            end_time_2="18:30",
+            split_shift=True,
+        )
+        self.assertFalse(split_shift_form.is_valid())
+        self.assertIn(
+            "Indica al menos una de las dos horas reales de llegada.",
+            split_shift_form.non_field_errors(),
+        )
+
+        first_arrival_only = LateArrivalForm(
+            data={**split_shift_times, "actual_start_time": "10:30"},
+            start_time="10:00",
+            end_time="14:00",
+            start_time_2="17:00",
+            end_time_2="18:30",
+            split_shift=True,
+        )
+        self.assertTrue(first_arrival_only.is_valid(), first_arrival_only.errors)
+
+        second_arrival_only = LateArrivalForm(
+            data={**split_shift_times, "actual_start_time_2": "17:30"},
+            start_time="10:00",
+            end_time="14:00",
+            start_time_2="17:00",
+            end_time_2="18:30",
+            split_shift=True,
+        )
+        self.assertTrue(second_arrival_only.is_valid(), second_arrival_only.errors)
+
+    def test_split_shift_novelty_records_and_applies_both_arrival_times(self):
+        week_start = monday_of(date(2026, 10, 7))
+        assignment_url = reverse(
+            "assignment_save",
+            args=[week_start.isoformat(), self.person.pk, 0],
+        )
+        self.client.post(assignment_url, {
+            "status": "split_shift",
+            "branch": self.branch.pk,
+            "start_time": "10:00",
+            "end_time": "14:00",
+            "start_time_2": "17:00",
+            "end_time_2": "18:30",
+        })
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+
+        novelty_page = self.client.get(
+            reverse("novelties_week", args=[week_start.isoformat()]),
+            {"edit": f"{self.person.pk}-0"},
+        )
+        self.assertEqual(novelty_page.status_code, 200)
+        self.assertContains(novelty_page, 'name="actual_start_time"')
+        self.assertContains(novelty_page, 'name="actual_start_time_2"')
+        self.assertContains(novelty_page, "Llegada real 1")
+        self.assertContains(novelty_page, "Llegada real 2")
+
+        response = self.client.post(
+            reverse(
+                "novelty_save",
+                args=[week_start.isoformat(), self.person.pk, 0],
+            ),
+            {
+                "kind": AssignmentNovelty.LATE_ARRIVAL,
+                "actual_start_time": "10:30",
+                "actual_start_time_2": "17:30",
+                "observation": "",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(response.status_code, 200)
+        novelty = AssignmentNovelty.objects.get()
+        self.assertEqual(novelty.actual_start_time.strftime("%H:%M"), "10:30")
+        self.assertEqual(novelty.actual_start_time_2.strftime("%H:%M"), "17:30")
+
+        assignments = assignments_between(week_start, week_start)
+        self.assertEqual(assignments[0][5], "10:30")
+        self.assertEqual(assignments[0][11], "17:30")
+        summary, _ = summarize_period([self.person], assignments)
+        self.assertAlmostEqual(summary[self.person.pk]["worked"], 4.5)
+
+        normal_assignment_url = reverse(
+            "assignment_save",
+            args=[week_start.isoformat(), self.person.pk, 1],
+        )
+        self.client.post(normal_assignment_url, {
+            "status": "work",
+            "branch": self.branch.pk,
+            "start_time": "08:00",
+            "end_time": "16:00",
+        })
+        normal_novelty_page = self.client.get(
+            reverse("novelties_week", args=[week_start.isoformat()]),
+            {"edit": f"{self.person.pk}-1"},
+        )
+        self.assertNotContains(normal_novelty_page, 'name="actual_start_time_2"')
 
     def test_schedule_export_downloads_excel(self):
         response = self.client.get(
