@@ -20,9 +20,9 @@ def fortnight_workbook(start_date, end_date, people):
     total_fill = PatternFill("solid", fgColor="D9EAE7")
     rest_fill = PatternFill("solid", fgColor="EEF1F4")
     sheet.append([f"Análisis de turnos · {start_date:%d/%m/%Y} al {end_date:%d/%m/%Y}"])
-    sheet.merge_cells("A1:F1")
+    sheet.merge_cells("A1:G1")
     sheet["A1"].font = Font(bold=True, size=14)
-    sheet.append(["Nombre", "Días trabajados", "Horas trabajadas", "Horas diurnas", "Horas nocturnas", "Horas extra"])
+    sheet.append(["Nombre", "Días trabajados", "Horas trabajadas", "Horas diurnas", "Horas nocturnas", "Horas extra", "RN"])
     for cell in sheet[2]:
         cell.fill = header_fill
         cell.font = Font(color="FFFFFF", bold=True)
@@ -32,10 +32,12 @@ def fortnight_workbook(start_date, end_date, people):
         sheet.append([
             person.name, metric["days"], metric["worked"],
             metric["daytime"], metric["nighttime"], metric["overtime"],
+            metric["night_surcharge"],
         ])
     sheet.append([
         "TOTAL", totals["days"], totals["worked"],
         totals["daytime"], totals["nighttime"], totals["overtime"],
+        totals["night_surcharge"],
     ])
     for cell in sheet[sheet.max_row]:
         cell.fill = total_fill
@@ -45,7 +47,7 @@ def fortnight_workbook(start_date, end_date, people):
     sheet[sheet.max_row][0].font = Font(bold=True, size=12)
     sheet.append([
         "Nombre", "Día", "Sucursal", "Horario inicio", "Horario fin", "Trabajadas",
-        "Horas extra", "HD", "HN", "Observación",
+        "Horas extra", "HD", "HN", "RN", "Observación",
     ])
     detail_header = sheet.max_row
     for cell in sheet[detail_header]:
@@ -68,6 +70,7 @@ def fortnight_workbook(start_date, end_date, people):
         actual_start_time_2 = assignment[11] if len(assignment) > 11 else None
         metrics = daily_metrics.get(assignment_index, {
             "worked": 0, "overtime": 0, "daytime": 0, "nighttime": 0,
+            "night_surcharge": 0,
         })
         person = people_by_id.get(person_id)
         if person is None:
@@ -77,7 +80,7 @@ def fortnight_workbook(start_date, end_date, people):
                 person_display_name(person, duplicate_names),
                 f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}",
                 "Incapacidad" if assignment_type == "incapacity" else "Descanso",
-                "", "", 0, 0, 0, 0, "",
+                "", "", 0, 0, 0, 0, 0, "",
             ]
         else:
             effective_start_time = actual_start_time or start_time
@@ -106,18 +109,19 @@ def fortnight_workbook(start_date, end_date, people):
                 metrics["overtime"] / 60,
                 metrics["daytime"] / 60,
                 metrics["nighttime"] / 60,
+                metrics["night_surcharge"] / 60,
                 observation,
             ]
         sheet.append(row)
         if branch_id is None:
             for cell in sheet[sheet.max_row]:
                 cell.fill = rest_fill
-    for column in range(1, 11):
+    for column in range(1, 12):
         sheet.cell(row=detail_header, column=column).alignment = Alignment(horizontal="center")
-    for column, width in zip("ABCDEFGHIJ", (30, 18, 30, 16, 16, 14, 14, 10, 10, 36)):
+    for column, width in zip("ABCDEFGHIJK", (30, 18, 30, 16, 16, 14, 14, 10, 10, 10, 36)):
         sheet.column_dimensions[column].width = width
     sheet.freeze_panes = "A3"
-    sheet.auto_filter.ref = f"A{detail_header}:J{sheet.max_row}"
+    sheet.auto_filter.ref = f"A{detail_header}:K{sheet.max_row}"
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()

@@ -17,7 +17,16 @@ from django.views.decorators.http import require_POST
 
 from .exports import fortnight_workbook, workbook_response
 from .forms import AnalysisPasswordForm, AssignmentForm, BranchForm, LateArrivalForm, PersonForm
-from .metrics import DAY_SHIFT_END_HOUR, DAY_SHIFT_START_HOUR, summarize_period
+from .metrics import (
+    DAY_SHIFT_END_HOUR,
+    DAY_SHIFT_START_HOUR,
+    LUNCH_END_MINUTES,
+    LUNCH_MINIMUM_SHIFT_MINUTES,
+    LUNCH_MINUTES,
+    LUNCH_START_MINUTES,
+    REGULAR_DAY_MINUTES,
+    summarize_period,
+)
 from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
 from .services import (
     assignments_between,
@@ -802,6 +811,14 @@ def analysis(request):
         "month_name": MONTHS[month - 1].title(),
         "day_shift_start": DAY_SHIFT_START_HOUR,
         "day_shift_end": DAY_SHIFT_END_HOUR,
+        "regular_hours": REGULAR_DAY_MINUTES // 60,
+        "lunch_minimum_hours": LUNCH_MINIMUM_SHIFT_MINUTES // 60,
+        "lunch_window": (
+            f"{LUNCH_START_MINUTES // 60:02d}:{LUNCH_START_MINUTES % 60:02d}"
+            f"–{(LUNCH_END_MINUTES - 1) // 60:02d}:{(LUNCH_END_MINUTES - 1) % 60:02d}"
+        ),
+        "lunch_cutoff": f"{LUNCH_END_MINUTES // 60:02d}:00",
+        "lunch_minutes": LUNCH_MINUTES,
     })
 
 

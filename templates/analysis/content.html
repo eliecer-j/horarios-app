@@ -1,6 +1,6 @@
 <section class="page-stack">
   <header class="page-header">
-    <div><p class="eyebrow">Reportes</p><h1>Análisis</h1><p class="muted">Período: {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }} · Horas extra netas sobre 8 h por día trabajado</p></div>
+    <div><p class="eyebrow">Reportes</p><h1>Análisis</h1><p class="muted">Período: {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }} · Horas extra netas sobre {{ regular_hours }} h trabajadas · turnos de {{ lunch_minimum_hours }} h o más que empiecen antes de {{ lunch_cutoff }} y pasen por {{ lunch_window }} descuentan {{ lunch_minutes }} min de almuerzo</p></div>
     <a class="button button-primary" href="{% url 'analysis_export' %}?month={{ month_value }}&amp;fortnight={{ fortnight }}">Descargar Excel</a>
   </header>
   <form class="analysis-toolbar card" method="get" action="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content">
@@ -10,14 +10,14 @@
   </form>
   <div class="schedule-wrap card">
     <table class="data-table">
-      <thead><tr><th>Nombre</th><th>Días trabajados</th><th>Horas trabajadas</th><th>Horas extra</th><th>Horas diurnas</th><th>Horas nocturnas</th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Días trabajados</th><th>Horas trabajadas</th><th>Horas extra</th><th>Horas diurnas</th><th>Horas nocturnas</th><th>RN</th></tr></thead>
       <tbody>
       {% for person, metric in people_metrics %}
-        <tr><th>{{ person.display_name }}</th><td>{{ metric.days }}</td><td>{{ metric.worked|floatformat:2 }}</td><td>{{ metric.overtime|floatformat:2 }}</td><td>{{ metric.daytime|floatformat:2 }}</td><td>{{ metric.nighttime|floatformat:2 }}</td></tr>
+        <tr><th>{{ person.display_name }}</th><td>{{ metric.days }}</td><td>{{ metric.worked|floatformat:2 }}</td><td>{{ metric.overtime|floatformat:2 }}</td><td>{{ metric.daytime|floatformat:2 }}</td><td>{{ metric.nighttime|floatformat:2 }}</td><td>{{ metric.night_surcharge|floatformat:2 }}</td></tr>
       {% endfor %}
-      <tr class="total-row"><th>TOTAL</th><td>{{ totals.days }}</td><td>{{ totals.worked|floatformat:2 }}</td><td>{{ totals.overtime|floatformat:2 }}</td><td>{{ totals.daytime|floatformat:2 }}</td><td>{{ totals.nighttime|floatformat:2 }}</td></tr>
+      <tr class="total-row"><th>TOTAL</th><td>{{ totals.days }}</td><td>{{ totals.worked|floatformat:2 }}</td><td>{{ totals.overtime|floatformat:2 }}</td><td>{{ totals.daytime|floatformat:2 }}</td><td>{{ totals.nighttime|floatformat:2 }}</td><td>{{ totals.night_surcharge|floatformat:2 }}</td></tr>
       </tbody>
     </table>
   </div>
-  <p class="form-hint">Horas diurnas: {{ day_shift_start }}:00–{{ day_shift_end }}:00 · Horas nocturnas: {{ day_shift_end }}:00–{{ day_shift_start }}:00.</p>
+  <p class="form-hint">Horas diurnas: {{ day_shift_start }}:00–{{ day_shift_end }}:00 · Horas nocturnas: {{ day_shift_end }}:00–{{ day_shift_start }}:00. RN: recargo nocturno, horas trabajadas entre {{ day_shift_end }}:00 y {{ day_shift_start }}:00. Los turnos continuos de {{ lunch_minimum_hours }} h o más que empiecen antes de {{ lunch_cutoff }} y pasen por {{ lunch_window }} descuentan {{ lunch_minutes }} min de almuerzo.</p>
 </section>

@@ -9,7 +9,13 @@ from openpyxl import load_workbook
 
 from .exports import fortnight_workbook
 from .forms import AssignmentForm, LateArrivalForm
-from .metrics import assignment_period_metrics, shift_metrics, summarize_period
+from .metrics import (
+    assignment_period_metrics,
+    shift_metrics,
+    shift_segments_metrics,
+    shift_touches_lunch,
+    summarize_period,
+)
 from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
 from .services import assignments_between, clear_week, delete_branch, monday_of, week_assignments
 from .templatetags.schedule_tags import capitalize
@@ -471,6 +477,12 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Horas trabajadas")
+        self.assertContains(response, "<th>RN</th>", html=True)
+        self.assertContains(response, "RN: recargo nocturno")
+        self.assertContains(response, "Horas extra netas sobre 7 h trabajadas")
+        self.assertContains(response, "turnos de 6 h o más")
+        self.assertContains(response, "empiecen antes de 14:00")
+        self.assertContains(response, "13:00–13:59")
 
     def test_novelties_requires_the_analysis_session(self):
         response = self.client.get(
@@ -583,14 +595,14 @@ class LegacyDatabaseViewsTests(TestCase):
             {"month": month, "fortnight": fortnight},
         )
         self.assertEqual(analysis.status_code, 200)
-        self.assertEqual(analysis.context["totals"]["worked"], 6.5)
+        self.assertEqual(analysis.context["totals"]["worked"], 5.5)
 
         workbook_response = self.client.get(
             reverse("analysis_export"),
             {"month": month, "fortnight": fortnight},
         )
         workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
-        self.assertEqual(workbook.active["C4"].value, 6.5)
+        self.assertEqual(workbook.active["C4"].value, 5.5)
         self.assertEqual(workbook.active["D8"].value, "09:30")
 
     def test_absence_and_calamity_do_not_add_worked_hours(self):
@@ -654,8 +666,8 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(workbook.active["F9"].value, 0)
         self.assertIn("No se presentó", workbook.active["C8"].value)
         self.assertIn("Calamidad", workbook.active["C9"].value)
-        self.assertEqual(workbook.active["J8"].value, "No avisó")
-        self.assertEqual(workbook.active["J9"].value, "Emergencia familiar")
+        self.assertEqual(workbook.active["K8"].value, "No avisó")
+        self.assertEqual(workbook.active["K9"].value, "Emergencia familiar")
 
     def test_changing_shift_times_preserves_existing_novelty(self):
         with connection.cursor() as cursor:
@@ -1124,7 +1136,118 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(sheet["AF3"].value, "Vacaciones")
 
     def test_overnight_shift_metrics(self):
-        self.assertEqual(shift_metrics("22:00", "06:00"), (8.0, 0.0, 0.0, 0.0))
+        self.assertEqual(
+            shift_metrics("22:00", "06:00"), (8.0, 1.0, 0.0, 1.0, 8.0)
+        )
+
+    def test_lunch_is_deducted_only_when_shift_touches_it(self):
+        for start_time, end_time, expected in (
+            ("09:00", "17:00", (7.0, 0.0, 0.0, 0.0, 0.0)),
+            ("09:00", "18:00", (8.0, 1.0, 1.0, 0.0, 0.0)),
+            ("10:30", "19:00", (7.5, 0.5, 0.5, 0.0, 0.0)),
+            ("13:30", "22:00", (7.5, 0.5, 0.0, 0.5, 3.0)),
+            ("12:00", "20:00", (7.0, 0.0, 0.0, 0.0, 1.0)),
+            ("13:00", "22:00", (8.0, 1.0, 0.0, 1.0, 3.0)),
+        ):
+            with self.subTest(start_time=start_time, end_time=end_time):
+                self.assertEqual(shift_metrics(start_time, end_time), expected)
+
+    def test_lunch_is_not_deducted_outside_the_lunch_window(self):
+        for start_time, end_time, expected in (
+            ("05:00", "13:00", (8.0, 1.0, 1.0, 0.0, 1.0)),
+            ("14:00", "22:00", (8.0, 1.0, 0.0, 1.0, 3.0)),
+            ("22:00", "06:00", (8.0, 1.0, 0.0, 1.0, 8.0)),
+        ):
+            with self.subTest(start_time=start_time, end_time=end_time):
+                self.assertEqual(shift_metrics(start_time, end_time), expected)
+
+    def test_lunch_requires_a_six_hour_shift(self):
+        self.assertEqual(
+            shift_metrics("10:00", "16:00"), (5.0, 0.0, 0.0, 0.0, 0.0)
+        )
+        self.assertEqual(
+            shift_metrics("10:00", "15:30"), (5.5, 0.0, 0.0, 0.0, 0.0)
+        )
+
+    def test_lunch_window_is_13_00_to_13_59(self):
+        self.assertFalse(shift_touches_lunch("05:00", "13:00"))
+        self.assertTrue(shift_touches_lunch("05:00", "13:01"))
+        self.assertTrue(shift_touches_lunch("13:00", "20:00"))
+        self.assertTrue(shift_touches_lunch("13:59", "22:00"))
+        self.assertFalse(shift_touches_lunch("14:00", "22:00"))
+
+    def test_shifts_starting_at_or_after_14_00_skip_lunch(self):
+        for start_time, end_time in (
+            ("14:00", "22:00"),
+            ("14:01", "22:00"),
+            ("15:00", "23:00"),
+            ("22:00", "14:00"),
+            ("23:00", "13:30"),
+        ):
+            with self.subTest(start_time=start_time, end_time=end_time):
+                self.assertFalse(shift_touches_lunch(start_time, end_time))
+        self.assertTrue(shift_touches_lunch("05:00", "14:00"))
+        self.assertTrue(shift_touches_lunch("13:59", "22:00"))
+
+    def test_lunch_does_not_apply_to_split_shifts(self):
+        self.assertEqual(
+            shift_segments_metrics(
+                (("09:00", "13:00"), ("14:00", "18:30"))
+            ),
+            (8.5, 1.5, 1.5, 0.0, 0.0),
+        )
+        self.assertEqual(
+            shift_segments_metrics(
+                (("09:00", "14:00"), ("15:00", "19:00"))
+            ),
+            (9.0, 2.0, 2.0, 0.0, 0.0),
+        )
+
+    def test_overtime_starts_after_the_lunch_hour(self):
+        self.assertEqual(
+            shift_metrics("09:00", "19:00"), (9.0, 2.0, 2.0, 0.0, 0.0)
+        )
+
+    def test_night_surcharge_counts_all_night_hours(self):
+        for start_time, end_time, expected in (
+            ("08:00", "19:30", 0.5),
+            ("14:00", "20:00", 1.0),
+            ("09:30", "20:00", 1.0),
+            ("05:00", "13:00", 1.0),
+            ("09:00", "18:00", 0.0),
+            ("19:00", "22:00", 3.0),
+        ):
+            with self.subTest(start_time=start_time, end_time=end_time):
+                self.assertEqual(
+                    shift_metrics(start_time, end_time)[4], expected
+                )
+
+    def test_night_surcharge_adds_both_segments_of_a_split_shift(self):
+        self.assertEqual(
+            shift_segments_metrics(
+                (("18:00", "22:00"), ("23:00", "02:00"))
+            )[4],
+            6.0,
+        )
+
+    def test_late_arrival_after_lunch_skips_the_deduction(self):
+        assignments = [(
+            self.week_start,
+            self.person.pk,
+            self.branch.pk,
+            "09:00",
+            "18:00",
+            "14:00",
+            None,
+            "",
+            "work",
+            None,
+            None,
+            None,
+        )]
+        daily_metrics = assignment_period_metrics([self.person], assignments)
+        self.assertEqual(daily_metrics[0]["worked"], 4 * 60)
+        self.assertEqual(daily_metrics[0]["night_surcharge"], 0)
 
     def test_analysis_preserves_negative_daytime_balance_and_nighttime_overtime(self):
         week_start = date(2026, 10, 5)
@@ -1156,16 +1279,16 @@ class LegacyDatabaseViewsTests(TestCase):
         summaries, _ = summarize_period([self.person], assignments, daily_metrics)
         metric = summaries[self.person.pk]
 
-        self.assertAlmostEqual(metric["worked"], 46 + 53 / 60)
-        self.assertAlmostEqual(metric["overtime"], -1 - 7 / 60)
-        self.assertAlmostEqual(metric["daytime"], -2 - 7 / 60)
+        self.assertAlmostEqual(metric["worked"], 42 + 53 / 60)
+        self.assertAlmostEqual(metric["overtime"], 53 / 60)
+        self.assertAlmostEqual(metric["daytime"], -7 / 60)
         self.assertEqual(metric["nighttime"], 1)
         self.assertEqual(daily_metrics[3]["nighttime"], 60)
-        self.assertEqual(daily_metrics[1]["daytime"], -210)
-        self.assertEqual(daily_metrics[4]["daytime"], -150)
+        self.assertEqual(daily_metrics[1]["daytime"], -150)
+        self.assertEqual(daily_metrics[4]["daytime"], -90)
         self.assertEqual(
             sum(item["overtime"] for item in daily_metrics.values()),
-            -67,
+            53,
         )
 
     def test_analysis_nets_overtime_against_shorter_workdays(self):
@@ -1188,11 +1311,11 @@ class LegacyDatabaseViewsTests(TestCase):
         metric = summaries[self.person.pk]
 
         self.assertEqual(metric["days"], 7)
-        self.assertAlmostEqual(metric["worked"], 3379 / 60)
-        self.assertAlmostEqual(metric["overtime"], 19 / 60)
-        self.assertAlmostEqual(metric["daytime"], 19 / 60)
+        self.assertAlmostEqual(metric["worked"], 3019 / 60)
+        self.assertAlmostEqual(metric["overtime"], 79 / 60)
+        self.assertAlmostEqual(metric["daytime"], 79 / 60)
         self.assertEqual(metric["nighttime"], 0)
-        self.assertAlmostEqual(totals["overtime"], 19 / 60)
+        self.assertAlmostEqual(totals["overtime"], 79 / 60)
 
         session = self.client.session
         session["analysis_authenticated"] = True
@@ -1206,7 +1329,7 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertAlmostEqual(
             response.context["summaries"][self.person.pk]["overtime"],
-            19 / 60,
+            79 / 60,
         )
 
         workbook_response = self.client.get(
@@ -1215,19 +1338,21 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
         self.assertEqual(
-            tuple(workbook.active.cell(row=2, column=column).value for column in range(1, 7)),
+            tuple(workbook.active.cell(row=2, column=column).value for column in range(1, 8)),
             (
                 "Nombre", "Días trabajados", "Horas trabajadas",
-                "Horas diurnas", "Horas nocturnas", "Horas extra",
+                "Horas diurnas", "Horas nocturnas", "Horas extra", "RN",
             ),
         )
-        self.assertAlmostEqual(workbook.active["C3"].value, 3379 / 60)
-        self.assertAlmostEqual(workbook.active["D3"].value, 19 / 60)
+        self.assertAlmostEqual(workbook.active["C3"].value, 3019 / 60)
+        self.assertAlmostEqual(workbook.active["D3"].value, 79 / 60)
         self.assertEqual(workbook.active["E3"].value, 0)
-        self.assertAlmostEqual(workbook.active["F3"].value, 19 / 60)
+        self.assertAlmostEqual(workbook.active["F3"].value, 79 / 60)
+        self.assertEqual(workbook.active["G3"].value, 0)
         self.assertEqual(workbook.active["G7"].value, "Horas extra")
         self.assertEqual(workbook.active["H7"].value, "HD")
         self.assertEqual(workbook.active["I7"].value, "HN")
+        self.assertEqual(workbook.active["J7"].value, "RN")
         self.assertAlmostEqual(
             sum(workbook.active.cell(row=row, column=7).value for row in range(8, 15)),
             workbook.active["F3"].value,
@@ -1239,6 +1364,10 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertAlmostEqual(
             sum(workbook.active.cell(row=row, column=9).value for row in range(8, 15)),
             workbook.active["E3"].value,
+        )
+        self.assertAlmostEqual(
+            sum(workbook.active.cell(row=row, column=10).value for row in range(8, 15)),
+            workbook.active["G3"].value,
         )
 
     def test_analysis_export_shows_daily_daytime_and_nighttime_overtime(self):
@@ -1273,18 +1402,21 @@ class LegacyDatabaseViewsTests(TestCase):
         workbook = load_workbook(BytesIO(workbook_response.content), read_only=True)
         sheet = workbook.active
         self.assertEqual(
-            tuple(sheet.cell(row=2, column=column).value for column in range(1, 7)),
+            tuple(sheet.cell(row=2, column=column).value for column in range(1, 8)),
             (
                 "Nombre", "Días trabajados", "Horas trabajadas",
-                "Horas diurnas", "Horas nocturnas", "Horas extra",
+                "Horas diurnas", "Horas nocturnas", "Horas extra", "RN",
             ),
         )
-        self.assertEqual((sheet["D3"].value, sheet["E3"].value, sheet["F3"].value), (2, 2, 4))
-        self.assertEqual((sheet["G8"].value, sheet["H8"].value, sheet["I8"].value), (2, 2, 0))
-        self.assertEqual((sheet["G9"].value, sheet["H9"].value, sheet["I9"].value), (2, 0, 2))
+        self.assertEqual((sheet["D3"].value, sheet["E3"].value, sheet["F3"].value), (2, 4, 6))
+        self.assertEqual(sheet["G3"].value, 14)
+        self.assertEqual((sheet["G8"].value, sheet["H8"].value, sheet["I8"].value), (3, 2, 1))
+        self.assertEqual((sheet["G9"].value, sheet["H9"].value, sheet["I9"].value), (3, 0, 3))
+        self.assertEqual((sheet["J8"].value, sheet["J9"].value), (8, 6))
         self.assertEqual(sheet["F3"].value, sheet["G8"].value + sheet["G9"].value)
         self.assertEqual(sheet["D3"].value, sheet["H8"].value + sheet["H9"].value)
         self.assertEqual(sheet["E3"].value, sheet["I8"].value + sheet["I9"].value)
+        self.assertEqual(sheet["G3"].value, sheet["J8"].value + sheet["J9"].value)
 
     def test_absence_and_calamity_reduce_overtime_and_daily_quota(self):
         shift_end_times = ("17:16", "17:16", "17:16", "17:16", "13:00", "15:15", "15:00")
@@ -1317,7 +1449,7 @@ class LegacyDatabaseViewsTests(TestCase):
         metric = summaries[self.person.pk]
 
         self.assertEqual(metric["days"], 5)
-        self.assertAlmostEqual(metric["worked"], 2523 / 60)
+        self.assertAlmostEqual(metric["worked"], 2223 / 60)
         self.assertAlmostEqual(metric["overtime"], 123 / 60)
         self.assertAlmostEqual(metric["daytime"], 123 / 60)
         self.assertEqual(metric["nighttime"], 0)
