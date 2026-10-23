@@ -1,3 +1,4 @@
+{% load schedule_tags %}
 <section class="page-stack">
   <header class="page-header">
     <div><p class="eyebrow">Reportes</p><h1>Análisis</h1><p class="muted">Período: {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }} · Horas extra netas sobre {{ regular_hours }} h trabajadas · turnos de {{ lunch_minimum_hours }} h o más que empiecen antes de {{ lunch_cutoff }} y pasen por {{ lunch_window }} descuentan {{ lunch_minutes }} min de almuerzo</p></div>
@@ -9,15 +10,48 @@
     <button class="button button-secondary" type="submit">Ver período</button>
   </form>
   <div class="schedule-wrap card">
-    <table class="data-table">
-      <thead><tr><th>Nombre</th><th>Días trabajados</th><th>Horas trabajadas</th><th>Horas extra</th><th>Horas diurnas</th><th>Horas nocturnas</th><th>RN</th></tr></thead>
+    <table class="data-table analysis-table">
+      <thead>
+        <tr>
+          <th scope="col">Nombre</th>
+          <th scope="col" title="Días con turno registrado en el período">Días trabajados</th>
+          <th scope="col" title="Horas efectivas después de descontar el almuerzo">Horas trabajadas</th>
+          <th scope="col" title="HD + HN. Puede ser negativo si no se completa la jornada de 7 h.">Horas extra</th>
+          <th scope="col" title="HD: horas extra diurnas (06:00–19:00).">Horas diurnas</th>
+          <th scope="col" title="HN: horas extra nocturnas (19:00–06:00).">Horas nocturnas</th>
+          <th scope="col" title="RN: recargo nocturno, todas las horas trabajadas entre 19:00 y 06:00.">RN</th>
+        </tr>
+      </thead>
       <tbody>
       {% for person, metric in people_metrics %}
-        <tr><th>{{ person.display_name }}</th><td>{{ metric.days }}</td><td>{{ metric.worked|floatformat:2 }}</td><td>{{ metric.overtime|floatformat:2 }}</td><td>{{ metric.daytime|floatformat:2 }}</td><td>{{ metric.nighttime|floatformat:2 }}</td><td>{{ metric.night_surcharge|floatformat:2 }}</td></tr>
+        <tr>
+          <th scope="row">{{ person.display_name }}</th>
+          <td>{{ metric.days }}</td>
+          <td>{{ metric.worked|floatformat:2 }}</td>
+          <td class="{{ metric.overtime|signed_class }}">{{ metric.overtime|floatformat:2 }}</td>
+          <td class="{{ metric.daytime|signed_class }}">{{ metric.daytime|floatformat:2 }}</td>
+          <td class="{{ metric.nighttime|signed_class }}">{{ metric.nighttime|floatformat:2 }}</td>
+          <td>{{ metric.night_surcharge|floatformat:2 }}</td>
+        </tr>
       {% endfor %}
-      <tr class="total-row"><th>TOTAL</th><td>{{ totals.days }}</td><td>{{ totals.worked|floatformat:2 }}</td><td>{{ totals.overtime|floatformat:2 }}</td><td>{{ totals.daytime|floatformat:2 }}</td><td>{{ totals.nighttime|floatformat:2 }}</td><td>{{ totals.night_surcharge|floatformat:2 }}</td></tr>
+      <tr class="total-row">
+        <th scope="row">TOTAL</th>
+        <td>{{ totals.days }}</td>
+        <td>{{ totals.worked|floatformat:2 }}</td>
+        <td class="{{ totals.overtime|signed_class }}">{{ totals.overtime|floatformat:2 }}</td>
+        <td class="{{ totals.daytime|signed_class }}">{{ totals.daytime|floatformat:2 }}</td>
+        <td class="{{ totals.nighttime|signed_class }}">{{ totals.nighttime|floatformat:2 }}</td>
+        <td>{{ totals.night_surcharge|floatformat:2 }}</td>
+      </tr>
       </tbody>
     </table>
   </div>
-  <p class="form-hint">Horas diurnas: {{ day_shift_start }}:00–{{ day_shift_end }}:00 · Horas nocturnas: {{ day_shift_end }}:00–{{ day_shift_start }}:00. RN: recargo nocturno, horas trabajadas entre {{ day_shift_end }}:00 y {{ day_shift_start }}:00. Los turnos continuos de {{ lunch_minimum_hours }} h o más que empiecen antes de {{ lunch_cutoff }} y pasen por {{ lunch_window }} descuentan {{ lunch_minutes }} min de almuerzo.</p>
+  <div class="analysis-legend form-hint" aria-label="Leyenda de columnas">
+    <span class="analysis-legend-item"><span class="legend-swatch legend-negative" aria-hidden="true"></span>Negativo: faltante contra la jornada de 7 h</span>
+    <span class="analysis-legend-item"><span class="legend-swatch legend-positive" aria-hidden="true"></span>Positivo: horas extra</span>
+    <span class="analysis-legend-item">HD: extra diurna ({{ day_shift_start }}:00–{{ day_shift_end }}:00)</span>
+    <span class="analysis-legend-item">HN: extra nocturna ({{ day_shift_end }}:00–{{ day_shift_start }}:00)</span>
+    <span class="analysis-legend-item">RN: recargo nocturno (todas las horas entre {{ day_shift_end }}:00 y {{ day_shift_start }}:00)</span>
+  </div>
+  <p class="form-hint">Los turnos continuos de {{ lunch_minimum_hours }} h o más que empiecen antes de {{ lunch_cutoff }} y pasen por {{ lunch_window }} descuentan {{ lunch_minutes }} min de almuerzo.</p>
 </section>

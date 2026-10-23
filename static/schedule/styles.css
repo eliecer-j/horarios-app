@@ -8,6 +8,7 @@
   --primary: 173 77% 26%;
   --primary-foreground: 0 0% 100%;
   --danger: 0 72% 51%;
+  --success: 152 61% 30%;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .dark {
@@ -20,6 +21,7 @@
   --primary: 173 65% 42%;
   --primary-foreground: 222 30% 9%;
   --danger: 0 68% 62%;
+  --success: 152 55% 58%;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-size: 14px; }
@@ -201,6 +203,15 @@ button, input, select { font: inherit; }
 .logs-empty { padding: 32px !important; color: hsl(var(--muted)); text-align: center !important; }
 .logs-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .total-row { font-weight: 700; background: hsl(var(--muted) / .08); }
+.metric-negative { color: hsl(var(--danger)); font-weight: 600; }
+.metric-positive { color: hsl(var(--success)); font-weight: 600; }
+.total-row .metric-negative, .total-row .metric-positive { font-weight: 700; }
+.data-table th[title] { cursor: help; }
+.analysis-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
+.analysis-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px; }
+.legend-negative { background: hsl(var(--danger)); }
+.legend-positive { background: hsl(var(--success)); }
 .empty-state { padding: 38px 18px; text-align: center; }
 .empty-state h2 { margin: 0 0 5px; font-size: 16px; }
 .empty-state p { margin: 0 0 13px; color: hsl(var(--muted)); }

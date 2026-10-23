@@ -18,7 +18,7 @@ from .metrics import (
 )
 from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
 from .services import assignments_between, clear_week, delete_branch, monday_of, week_assignments
-from .templatetags.schedule_tags import capitalize
+from .templatetags.schedule_tags import capitalize, signed_class
 
 
 class LegacyDatabaseViewsTests(TestCase):
@@ -477,8 +477,10 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Horas trabajadas")
-        self.assertContains(response, "<th>RN</th>", html=True)
+        self.assertContains(response, ">RN</th>")
         self.assertContains(response, "RN: recargo nocturno")
+        self.assertContains(response, "Negativo: faltante contra la jornada de 7 h")
+        self.assertContains(response, "Positivo: horas extra")
         self.assertContains(response, "Horas extra netas sobre 7 h trabajadas")
         self.assertContains(response, "turnos de 6 h o más")
         self.assertContains(response, "empiecen antes de 14:00")
@@ -1327,6 +1329,7 @@ class LegacyDatabaseViewsTests(TestCase):
             {"month": month, "fortnight": fortnight},
         )
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="metric-positive"')
         self.assertAlmostEqual(
             response.context["summaries"][self.person.pk]["overtime"],
             79 / 60,
@@ -1462,3 +1465,11 @@ class WeekDateTests(TestCase):
     def test_capitalize_person_name_and_keep_dni_acronym(self):
         self.assertEqual(capitalize("ANA TORRES"), "Ana Torres")
         self.assertEqual(capitalize("ANA TORRES · DNI 123"), "Ana Torres · DNI 123")
+
+
+class TemplateTagTests(TestCase):
+    def test_signed_class_marks_negative_and_positive_values(self):
+        self.assertEqual(signed_class(-1.5), "metric-negative")
+        self.assertEqual(signed_class(0), "")
+        self.assertEqual(signed_class(2), "metric-positive")
+        self.assertEqual(signed_class(None), "")
