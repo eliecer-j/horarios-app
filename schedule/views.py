@@ -117,7 +117,11 @@ def _week_label(week_start):
     return f"Semana {week_start.isocalendar().week:02d} · {span} {week_end.year}"
 
 
-def _schedule_context(week_start, edit=None, form=None, message="", filter_key="all"):
+def _schedule_context(
+    week_start, edit=None, form=None, message="", filter_key="all", branch_filter=""
+):
+    branch_filter = str(branch_filter or "").strip()
+    branch_id = int(branch_filter) if branch_filter.isdigit() else None
     people = attach_vacation_ranges(Person.objects.all())
     branches = list(Branch.objects.all())
     assignments = week_assignments(week_start)
@@ -152,6 +156,12 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
         if filter_key == "pending" and not has_pending:
             continue
         if filter_key == "no_rest" and not alert:
+            continue
+        if branch_id is not None and not any(
+            value["branch_id"] == branch_id
+            for (person_id, _), value in assignments.items()
+            if person_id == person.pk
+        ):
             continue
         rows.append({
             "person": person,
@@ -203,6 +213,7 @@ def _schedule_context(week_start, edit=None, form=None, message="", filter_key="
             len(cell_novelties) for cell_novelties in historical_novelties.values()
         ),
         "filter_key": filter_key,
+        "branch_filter": branch_filter,
         "edit": edit,
         "edit_person": next((person for person in people if edit and person.pk == edit[0]), None),
         "edit_day": edit[1] if edit else None,
@@ -250,6 +261,7 @@ def schedule(request, week_start):
     context = _schedule_context(
         week_start, edit=edit, form=form,
         filter_key=request.GET.get("filter", "all"),
+        branch_filter=request.GET.get("branch", ""),
     )
     return render_screen(request, "schedule/content.html", context)
 
@@ -295,6 +307,7 @@ def novelties_week(request, week_start):
         week_start,
         edit=edit,
         filter_key=request.GET.get("filter", "all"),
+        branch_filter=request.GET.get("branch", ""),
     )
     context.update({
         "novelty_form": form,
@@ -365,6 +378,7 @@ def novelty_save(request, week_start, person_id, day):
             week_start,
             message=message,
             filter_key=request.POST.get("filter", "all"),
+            branch_filter=request.POST.get("branch_filter", ""),
         )
         context.update({"novelties_mode": True, "week_route": "novelties_week"})
         return render_screen(request, "schedule/content.html", context)
@@ -372,6 +386,7 @@ def novelty_save(request, week_start, person_id, day):
         week_start,
         edit=(person_id, day),
         filter_key=request.POST.get("filter", "all"),
+        branch_filter=request.POST.get("branch_filter", ""),
     )
     context.update({
         "novelty_form": form,
@@ -413,6 +428,7 @@ def novelty_history_delete(request, week_start, person_id, day):
         week_start,
         message=message,
         filter_key=request.POST.get("filter", "all"),
+        branch_filter=request.POST.get("branch_filter", ""),
     )
     context.update({"novelties_mode": True, "week_route": "novelties_week"})
     return render_screen(request, "schedule/content.html", context)
@@ -517,13 +533,19 @@ def assignment_save(request, week_start, person_id, day):
                 )
             return render_screen(
                 request, "schedule/content.html",
-                _schedule_context(week_start, message="Turno actualizado."),
+                _schedule_context(
+                    week_start, message="Turno actualizado.",
+                    branch_filter=request.POST.get("branch_filter", ""),
+                ),
             )
     except ValueError as exc:
         form.add_error(None, str(exc))
     return render_screen(
         request, "schedule/content.html",
-        _schedule_context(week_start, edit=(person_id, day), form=form),
+        _schedule_context(
+            week_start, edit=(person_id, day), form=form,
+            branch_filter=request.POST.get("branch_filter", ""),
+        ),
     )
 
 

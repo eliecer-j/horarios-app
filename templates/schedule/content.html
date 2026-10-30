@@ -71,9 +71,16 @@
   </section>
 
   <nav class="filter-row schedule-filter-row" aria-label="Filtros de turnos">
-    <a class="filter-chip {% if filter_key == 'all' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}" hx-target="#page-content" hx-push-url="true">Todas</a>
-    <a class="filter-chip {% if filter_key == 'pending' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=pending" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=pending" hx-target="#page-content" hx-push-url="true">Pendientes</a>
-    <a class="filter-chip {% if filter_key == 'no_rest' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest" hx-target="#page-content" hx-push-url="true">Sin descanso</a>
+    <a class="filter-chip {% if filter_key == 'all' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}{% if branch_filter %}?branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}{% if branch_filter %}?branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Todas</a>
+    <a class="filter-chip {% if filter_key == 'pending' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=pending{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=pending{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Pendientes</a>
+    <a class="filter-chip {% if filter_key == 'no_rest' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Sin descanso</a>
+    <label class="sr-only" for="branch-filter">Filtrar por sucursal</label>
+    <select id="branch-filter" class="branch-select schedule-branch-select" onchange="htmx.ajax('GET', '{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch=' + encodeURIComponent(this.value), {target:'#page-content', swap:'innerHTML', pushUrl:true})">
+      <option value="">Todas las sucursales</option>
+      {% for branch in branches %}
+        <option value="{{ branch.pk }}" {% if branch_filter == branch.pk|stringformat:'s' %}selected{% endif %}>{{ branch.name }}</option>
+      {% endfor %}
+    </select>
     <span class="muted filter-period">{{ week_label }}</span>
   </nav>
 
@@ -97,8 +104,8 @@
                 {% else %}
                   <a class="shift-cell {% if cell.assignment %}{% if cell.assignment.branch_id %}assigned-cell{% else %}rest-cell{% endif %}{% else %}empty-cell{% endif %}"
                     {% if cell.branch %}style="--branch-color: {{ cell.branch.color }}"{% endif %}
-                    href="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}"
-                    hx-get="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}"
+                    href="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}&amp;branch={{ branch_filter }}"
+                    hx-get="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}&amp;branch={{ branch_filter }}"
                     hx-target="#page-content" hx-swap="innerHTML">
                     {% if cell.assignment %}
                       {% if cell.assignment.branch_id %}
@@ -143,6 +150,7 @@
                       hx-confirm="¿Borrar todo el historial de novedades de esta celda?">
                       {% csrf_token %}
                       <input type="hidden" name="filter" value="{{ filter_key }}">
+                      <input type="hidden" name="branch_filter" value="{{ branch_filter }}">
                       <button class="button button-ghost small-button novelty-history-delete" type="submit">Borrar historial</button>
                     </form>
                   </div>
@@ -161,7 +169,7 @@
 
   {% if edit_person %}
     <dialog id="assignment-dialog" class="modal card" aria-labelledby="assignment-title">
-        <div class="modal-header"><div><p class="eyebrow">{{ edit_day_name }} {{ edit_date|date:'d/m/Y' }}</p><h2 id="assignment-title">{{ edit_person.name }}</h2></div><a class="icon-button" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-target="#page-content" hx-swap="innerHTML" aria-label="Cerrar">×</a></div>
+        <div class="modal-header"><div><p class="eyebrow">{{ edit_day_name }} {{ edit_date|date:'d/m/Y' }}</p><h2 id="assignment-title">{{ edit_person.name }}</h2></div><a class="icon-button" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-target="#page-content" hx-swap="innerHTML" aria-label="Cerrar">×</a></div>
         {% if novelties_mode %}
           <form method="post" action="{% url 'novelty_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-post="{% url 'novelty_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-target="#page-content" hx-swap="innerHTML">
             {% csrf_token %}
@@ -175,12 +183,13 @@
               {% endfor %}
             </div>
             <p class="form-hint">La hora solo se solicita para una llegada tarde; en un turno partido, basta con registrar una de las dos llegadas. “No se presentó” y “Calamidad” se registran con 0 horas. La observación es opcional.</p>
-            <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar novedad</button></div>
+            <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar novedad</button></div>
           </form>
         {% else %}
           {% if not has_branches %}<div class="notice notice-warning">Crea una sucursal antes de asignar un turno.</div>{% endif %}
           <form method="post" action="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-post="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-target="#page-content" hx-swap="innerHTML">
             {% csrf_token %}
+            <input type="hidden" name="branch_filter" value="{{ branch_filter }}">
             {% if edit_form.non_field_errors %}<div class="field-errors">{{ edit_form.non_field_errors }}</div>{% endif %}
             <div class="form-grid">
               {% for field in edit_form %}
@@ -191,7 +200,7 @@
             </div>
             <p class="form-hint">En un turno partido, completa Entrada 1, Salida 1, Entrada 2 y Salida 2. El tiempo entre las dos salidas y entradas no se cuenta como trabajado.</p>
             <p class="form-hint">Formato de 24 horas HH:MM; por ejemplo 12:00–17:00. También puedes indicar un turno nocturno, como 22:00–06:00.</p>
-            <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar turno</button></div>
+            <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar turno</button></div>
           </form>
         {% endif %}
     </dialog>

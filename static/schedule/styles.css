@@ -132,6 +132,8 @@ button, input, select { font: inherit; }
 .schedule-filter-row { min-height: 27px; gap: 3px; }
 .schedule-filter-row .filter-chip { padding: 4px 8px; font-size: 11px; }
 .schedule-filter-row .filter-period { font-size: 11px; }
+.schedule-branch-select { height: 24px; max-width: 180px; padding: 0 6px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 11px; }
+.schedule-branch-select:focus { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / .13); outline: none; }
 .schedule-wrap { overflow: auto; }
 .schedule-grid-scroll { min-height: 0; max-height: none; flex: 1 1 0; overscroll-behavior: contain; }
 .schedule-table, .data-table { width: 100%; min-width: 1120px; border-collapse: separate; border-spacing: 0; }

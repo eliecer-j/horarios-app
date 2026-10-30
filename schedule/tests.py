@@ -50,6 +50,89 @@ class LegacyDatabaseViewsTests(TestCase):
             response.content.index(b'class="rest-count-column">Descansos</th>'),
         )
 
+    def test_schedule_filters_rows_by_branch(self):
+        other_person = Person.objects.create(name="Beto Ruiz")
+        other_branch = Branch.objects.create(name="Norte", color="#EB5757")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
+                [self.week_start.isoformat(), self.person.pk, self.branch.pk],
+            )
+            cursor.execute(
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
+                [self.week_start.isoformat(), other_person.pk, other_branch.pk],
+            )
+
+        filtered = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()]),
+            {"branch": str(self.branch.pk)},
+        )
+        self.assertEqual(filtered.status_code, 200)
+        self.assertContains(filtered, "Ana Torres")
+        self.assertNotContains(filtered, "Beto Ruiz")
+        self.assertContains(filtered, f'value="{self.branch.pk}" selected')
+        self.assertContains(filtered, "Todas las sucursales")
+
+        unfiltered = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()]),
+        )
+        self.assertContains(unfiltered, "Ana Torres")
+        self.assertContains(unfiltered, "Beto Ruiz")
+
+    def test_saving_shift_does_not_auto_filter_by_its_branch(self):
+        other_person = Person.objects.create(name="Beto Ruiz")
+        other_branch = Branch.objects.create(name="Norte", color="#EB5757")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
+                [self.week_start.isoformat(), other_person.pk, other_branch.pk],
+            )
+
+        response = self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
+            {
+                "status": "work",
+                "branch": self.branch.pk,
+                "start_time": "08:00",
+                "end_time": "16:00",
+                "branch_filter": "",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ana Torres")
+        self.assertContains(response, "Beto Ruiz")
+
+    def test_saving_shift_keeps_the_selected_branch_filter(self):
+        other_person = Person.objects.create(name="Beto Ruiz")
+        other_branch = Branch.objects.create(name="Norte", color="#EB5757")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
+                [self.week_start.isoformat(), other_person.pk, other_branch.pk],
+            )
+
+        response = self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 1]),
+            {
+                "status": "work",
+                "branch": self.branch.pk,
+                "start_time": "08:00",
+                "end_time": "16:00",
+                "branch_filter": str(other_branch.pk),
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Beto Ruiz")
+        self.assertNotContains(response, "Ana Torres")
+
     def test_completed_vacation_days_remain_marked_in_past_week(self):
         week_start = monday_of(date(2020, 1, 6))
         self.person.vacation_start = date(2020, 1, 7)
