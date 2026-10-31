@@ -4,8 +4,13 @@
     <a class="button button-primary" href="{% url 'people' %}?new=1" hx-get="{% url 'people' %}?new=1" hx-target="#page-content">＋ Nueva persona</a>
   </header>
   {% if message %}<div class="notice notice-success" role="status">{{ message }}</div>{% endif %}
-  <form class="search-form" method="get" action="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-trigger="input changed delay:250ms, search">
+  <form class="people-toolbar" method="get" action="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-trigger="input changed delay:250ms from:input[type='search'], change from:input[type='checkbox'], search">
     <input class="form-control search-input" type="search" name="q" value="{{ query }}" placeholder="Buscar por nombre o DNI" aria-label="Buscar por nombre o DNI">
+    <input type="hidden" name="hide_vacations" value="0">
+    <label class="checkbox-field">
+      <input type="checkbox" name="hide_vacations" value="1" {% if hide_vacations %}checked{% endif %}>
+      <span>Ocultar vacaciones</span>
+    </label>
   </form>
   {% if request.GET.new == "1" or editing or form.errors or editing_person %}
     <section id="person-form-card" class="card form-card">
@@ -29,6 +34,7 @@
       <article class="person-row">
         <span class="avatar avatar-large" aria-hidden="true">{{ person.name|slice:":1"|upper }}</span>
         <div class="row-main"><h2>{{ person.display_name }}</h2><p class="muted">DNI: {{ person.dni|default:"no registrado" }} · {{ week_label }}: {{ person.week_work }} turnos, {{ person.week_rest }} descansos</p>
+          {% if not hide_vacations %}
           {% for vacation in person.vacation_periods_display %}
             <div class="vacation-detail-row">
               <p class="vacation-detail">Vacaciones: {{ vacation.start|date:'d/m/Y' }} al {{ vacation.end|date:'d/m/Y' }}</p>
@@ -40,6 +46,7 @@
               {% endif %}
             </div>
           {% endfor %}
+          {% endif %}
         </div>
         <div class="row-actions">
           <a class="button button-secondary small-button" href="{% url 'people' %}?edit={{ person.pk }}" hx-get="{% url 'people' %}?edit={{ person.pk }}" hx-target="#page-content">Editar</a>

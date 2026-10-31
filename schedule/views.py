@@ -562,6 +562,10 @@ def schedule_clear(request, week_start):
 
 def people(request):
     query = request.GET.get("q", "").strip()
+    hide_vacations = (
+        "hide_vacations" not in request.GET
+        or "1" in request.GET.getlist("hide_vacations")
+    )
     editing = request.GET.get("edit")
     person = None
     if editing:
@@ -655,6 +659,7 @@ def people(request):
         "message": message,
         "week_label": _week_label(week_start),
         "total_people": Person.objects.count(),
+        "hide_vacations": hide_vacations,
     })
 
 

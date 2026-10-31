@@ -413,6 +413,20 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ana Torres")
 
+    def test_people_hide_vacations_by_default_and_can_be_shown(self):
+        self.person.vacation_start = date(2026, 1, 5)
+        self.person.vacation_end = date(2026, 1, 9)
+        self.person.save()
+
+        hidden = self.client.get(reverse("people"))
+        self.assertContains(hidden, "Ocultar vacaciones")
+        self.assertContains(hidden, 'value="1" checked')
+        self.assertNotContains(hidden, "Vacaciones:")
+
+        shown = self.client.get(reverse("people"), {"hide_vacations": "0"})
+        self.assertContains(shown, "Vacaciones:")
+        self.assertNotContains(shown, 'value="1" checked')
+
     def test_edit_person_form_loads_saved_vacation_dates(self):
         self.person.vacation_start = date(2026, 10, 12)
         self.person.vacation_end = date(2026, 10, 19)

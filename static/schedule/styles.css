@@ -183,6 +183,10 @@ button, input, select { font: inherit; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 17px; }
 .search-form { max-width: 350px; }
 .search-input { width: 100%; }
+.people-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.people-toolbar .search-input { width: min(320px, 100%); }
+.checkbox-field { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; }
+.checkbox-field input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: hsl(var(--primary)); }
 .form-card { padding: 18px; scroll-margin-top: 20px; }
 .list-card { overflow: hidden; }
 .person-row { display: flex; align-items: center; gap: 13px; padding: 14px 17px; border-bottom: 1px solid hsl(var(--border)); }
