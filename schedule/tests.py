@@ -133,6 +133,27 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, "Beto Ruiz")
         self.assertNotContains(response, "Ana Torres")
 
+    def test_pages_include_accessibility_basics(self):
+        schedule_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertContains(schedule_response, "Saltar al contenido")
+        self.assertContains(schedule_response, 'id="page-content" tabindex="-1"')
+        self.assertContains(schedule_response, "Grilla semanal de turnos")
+
+        pending_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()]),
+            {"filter": "pending"},
+        )
+        self.assertContains(pending_response, 'aria-current="true"')
+
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+        logs_response = self.client.get(reverse("logs"))
+        self.assertContains(logs_response, "Historial de cambios")
+        self.assertContains(logs_response, 'scope="col"')
+
     def test_completed_vacation_days_remain_marked_in_past_week(self):
         week_start = monday_of(date(2020, 1, 6))
         self.person.vacation_start = date(2020, 1, 7)

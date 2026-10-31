@@ -21,11 +21,11 @@
   <section class="branch-grid">
     {% for branch in branches %}
       <article class="card branch-card">
-        <span class="branch-icon" style="--branch-color: {{ branch.color }}">⌂</span>
+        <span class="branch-icon" aria-hidden="true" style="--branch-color: {{ branch.color }}">⌂</span>
         <div class="row-main"><h2>{{ branch.name }}</h2><p class="muted">{{ branch.week_shifts }} turnos · {{ branch.week_people }} personas</p></div>
         <div class="row-actions">
-          <a class="icon-button" title="Editar" href="{% url 'branches' %}?edit={{ branch.pk }}" hx-get="{% url 'branches' %}?edit={{ branch.pk }}" hx-target="#page-content">✎</a>
-          <form method="post" action="{% url 'branch_delete' branch.pk %}" hx-post="{% url 'branch_delete' branch.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar {{ branch.name }} y sus turnos?">{% csrf_token %}<button class="icon-button danger-text" type="submit" title="Eliminar">×</button></form>
+          <a class="icon-button" title="Editar" aria-label="Editar {{ branch.name }}" href="{% url 'branches' %}?edit={{ branch.pk }}" hx-get="{% url 'branches' %}?edit={{ branch.pk }}" hx-target="#page-content">✎</a>
+          <form method="post" action="{% url 'branch_delete' branch.pk %}" hx-post="{% url 'branch_delete' branch.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar {{ branch.name }} y sus turnos?">{% csrf_token %}<button class="icon-button danger-text" type="submit" title="Eliminar" aria-label="Eliminar {{ branch.name }}">×</button></form>
         </div>
       </article>
     {% empty %}<div class="card empty-state"><h2>{% if query %}No hay coincidencias{% else %}Aún no hay sucursales{% endif %}</h2><p>Agrega sucursales para asignar turnos.</p></div>{% endfor %}

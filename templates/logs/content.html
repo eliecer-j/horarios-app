@@ -4,7 +4,8 @@
   </header>
   <div class="schedule-wrap card">
     <table class="data-table logs-table">
-      <thead><tr><th>Fecha y hora</th><th>IP</th><th>Acción</th><th>Detalles</th></tr></thead>
+      <caption class="sr-only">Historial de cambios</caption>
+      <thead><tr><th scope="col">Fecha y hora</th><th scope="col">IP</th><th scope="col">Acción</th><th scope="col">Detalles</th></tr></thead>
       <tbody>
         {% for entry in page_obj %}
           <tr>

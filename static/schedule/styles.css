@@ -76,7 +76,7 @@ button, input, select { font: inherit; }
 .stat-warning strong { color: hsl(var(--danger)); }
 .filter-row { gap: 7px; flex-wrap: wrap; }
 .filter-chip { padding: 6px 11px; border: 1px solid transparent; border-radius: 999px; color: hsl(var(--muted)); font-size: 12px; }
-.filter-chip.selected { color: hsl(var(--foreground)); background: hsl(var(--card)); border-color: hsl(var(--border)); }
+.filter-chip.selected { color: hsl(var(--foreground)); background: hsl(var(--card)); border-color: hsl(var(--border)); font-weight: 700; }
 .filter-period { margin-left: auto; font-size: 12px; }
 .schedule-page-header { min-height: 34px; gap: 10px; }
 .schedule-main-shell { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; padding-top: 14px; padding-bottom: 14px; }
@@ -130,9 +130,9 @@ button, input, select { font: inherit; }
 .schedule-stats-strip .stat-item { min-height: 20px; font-size: 11px; }
 .schedule-stats-strip .stat-item strong { font-size: 12px; }
 .schedule-filter-row { min-height: 27px; gap: 3px; }
-.schedule-filter-row .filter-chip { padding: 4px 8px; font-size: 11px; }
+.schedule-filter-row .filter-chip { min-height: 24px; display: inline-flex; align-items: center; padding: 4px 9px; font-size: 11px; }
 .schedule-filter-row .filter-period { font-size: 11px; }
-.schedule-branch-select { height: 24px; max-width: 180px; padding: 0 6px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 11px; }
+.schedule-branch-select { height: 26px; max-width: 180px; padding: 0 6px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--card)); color: hsl(var(--foreground)); font-size: 11px; }
 .schedule-branch-select:focus { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / .13); outline: none; }
 .schedule-wrap { overflow: auto; }
 .schedule-grid-scroll { min-height: 0; max-height: none; flex: 1 1 0; overscroll-behavior: contain; }
@@ -223,6 +223,9 @@ button, input, select { font: inherit; }
 .unlock-card .form-field { margin: 18px 0 12px; }
 .full-width { width: 100%; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.skip-link { position: absolute; left: -9999px; top: 0; z-index: 1000; padding: 10px 14px; border: 1px solid hsl(var(--primary)); border-radius: 0 0 8px 0; background: hsl(var(--card)); color: hsl(var(--foreground)); font-weight: 600; }
+.skip-link:focus { left: 0; }
+:where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid hsl(var(--primary) / .65); outline-offset: 2px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 @media (max-width: 850px) {
   .sidebar { width: 64px; align-items: center; padding: 14px 8px; }

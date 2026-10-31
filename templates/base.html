@@ -17,31 +17,46 @@
   <link rel="stylesheet" href="{% static 'schedule/styles.css' %}">
 </head>
 <body class="bg-background text-foreground antialiased">
+  <a class="skip-link" href="#page-content">Saltar al contenido</a>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Barra lateral">
       <a href="{% url 'home' %}" hx-get="{% url 'home' %}" hx-target="#page-content" hx-push-url="true" class="brand">
-        <span class="brand-mark">T</span><span>Turnos</span>
+        <span class="brand-mark" aria-hidden="true">T</span><span>Turnos</span>
       </a>
       <nav class="nav-list" aria-label="Navegación principal">
-        <a data-nav-section="schedule" href="{% url 'home' %}" hx-get="{% url 'home' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/week/' in current_path or current_path == '/' %}active{% endif %}"><span>▦</span> Turnos</a>
-        <a data-nav-section="people" href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/people/' in current_path %}active{% endif %}"><span>♧</span> Personas</a>
-        <a data-nav-section="branches" href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/branches/' in current_path %}active{% endif %}"><span>⌂</span> Sucursales</a>
-        <a data-nav-section="analysis" href="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/analysis/' in current_path %}active{% endif %}"><span>▤</span> Análisis</a>
-        <a data-nav-section="novelties" href="{% url 'novelties' %}" hx-get="{% url 'novelties' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/novedades/' in current_path %}active{% endif %}"><span>✦</span> Novedades</a>
-        <a data-nav-section="logs" href="{% url 'logs' %}" hx-get="{% url 'logs' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/logs/' in current_path %}active{% endif %}"><span>▧</span> Logs</a>
+        <a data-nav-section="schedule" href="{% url 'home' %}" hx-get="{% url 'home' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/week/' in current_path or current_path == '/' %}active{% endif %}"><span aria-hidden="true">▦</span> Turnos</a>
+        <a data-nav-section="people" href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/people/' in current_path %}active{% endif %}"><span aria-hidden="true">♧</span> Personas</a>
+        <a data-nav-section="branches" href="{% url 'branches' %}" hx-get="{% url 'branches' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/branches/' in current_path %}active{% endif %}"><span aria-hidden="true">⌂</span> Sucursales</a>
+        <a data-nav-section="analysis" href="{% url 'analysis' %}" hx-get="{% url 'analysis' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/analysis/' in current_path %}active{% endif %}"><span aria-hidden="true">▤</span> Análisis</a>
+        <a data-nav-section="novelties" href="{% url 'novelties' %}" hx-get="{% url 'novelties' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/novedades/' in current_path %}active{% endif %}"><span aria-hidden="true">✦</span> Novedades</a>
+        <a data-nav-section="logs" href="{% url 'logs' %}" hx-get="{% url 'logs' %}" hx-target="#page-content" hx-push-url="true" class="nav-link {% if '/logs/' in current_path %}active{% endif %}"><span aria-hidden="true">▧</span> Logs</a>
       </nav>
       <div class="sidebar-footer">
-        <button type="button" class="nav-link theme-toggle" onclick="document.documentElement.classList.toggle('dark'); localStorage.setItem('turnos-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light')"><span>◐</span> Cambiar tema</button>
+        <button type="button" class="nav-link theme-toggle" aria-pressed="false" aria-label="Activar tema oscuro" onclick="toggleTheme()"><span aria-hidden="true">◐</span> Cambiar tema</button>
       </div>
     </aside>
     <main class="main-shell{% if '/week/' in current_path or '/novedades/' in current_path %} schedule-main-shell{% endif %}">
-      <div id="page-content">
+      <div id="page-content" tabindex="-1">
         {% include content_template %}
       </div>
     </main>
   </div>
   <script>
-    if (localStorage.getItem("turnos-theme") === "dark") document.documentElement.classList.add("dark");
+    function applyTheme(theme) {
+      const isDark = theme === "dark";
+      document.documentElement.classList.toggle("dark", isDark);
+      const toggle = document.querySelector(".theme-toggle");
+      if (toggle) {
+        toggle.setAttribute("aria-pressed", String(isDark));
+        toggle.setAttribute("aria-label", isDark ? "Desactivar tema oscuro" : "Activar tema oscuro");
+      }
+    }
+    function toggleTheme() {
+      const nextTheme = document.documentElement.classList.contains("dark") ? "light" : "dark";
+      applyTheme(nextTheme);
+      localStorage.setItem("turnos-theme", nextTheme);
+    }
+    applyTheme(localStorage.getItem("turnos-theme") === "dark" ? "dark" : "light");
     function updateActiveNavigation() {
       const path = window.location.pathname;
       const activeSection = path === "/" || path.startsWith("/week/")

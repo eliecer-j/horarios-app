@@ -27,7 +27,7 @@
   <section class="card list-card">
     {% for person in people %}
       <article class="person-row">
-        <span class="avatar avatar-large">{{ person.name|slice:":1"|upper }}</span>
+        <span class="avatar avatar-large" aria-hidden="true">{{ person.name|slice:":1"|upper }}</span>
         <div class="row-main"><h2>{{ person.display_name }}</h2><p class="muted">DNI: {{ person.dni|default:"no registrado" }} · {{ week_label }}: {{ person.week_work }} turnos, {{ person.week_rest }} descansos</p>
           {% for vacation in person.vacation_periods_display %}
             <div class="vacation-detail-row">

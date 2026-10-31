@@ -71,9 +71,9 @@
   </section>
 
   <nav class="filter-row schedule-filter-row" aria-label="Filtros de turnos">
-    <a class="filter-chip {% if filter_key == 'all' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}{% if branch_filter %}?branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}{% if branch_filter %}?branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Todas</a>
-    <a class="filter-chip {% if filter_key == 'pending' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=pending{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=pending{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Pendientes</a>
-    <a class="filter-chip {% if filter_key == 'no_rest' %}selected{% endif %}" href="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Sin descanso</a>
+    <a class="filter-chip {% if filter_key == 'all' %}selected{% endif %}" {% if filter_key == 'all' %}aria-current="true"{% endif %} href="{% url week_route week_start|date:'Y-m-d' %}{% if branch_filter %}?branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}{% if branch_filter %}?branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Todas</a>
+    <a class="filter-chip {% if filter_key == 'pending' %}selected{% endif %}" {% if filter_key == 'pending' %}aria-current="true"{% endif %} href="{% url week_route week_start|date:'Y-m-d' %}?filter=pending{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=pending{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Pendientes</a>
+    <a class="filter-chip {% if filter_key == 'no_rest' %}selected{% endif %}" {% if filter_key == 'no_rest' %}aria-current="true"{% endif %} href="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter=no_rest{% if branch_filter %}&amp;branch={{ branch_filter }}{% endif %}" hx-target="#page-content" hx-push-url="true">Sin descanso</a>
     <label class="sr-only" for="branch-filter">Filtrar por sucursal</label>
     <select id="branch-filter" class="branch-select schedule-branch-select" onchange="htmx.ajax('GET', '{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch=' + encodeURIComponent(this.value), {target:'#page-content', swap:'innerHTML', pushUrl:true})">
       <option value="">Todas las sucursales</option>
@@ -89,14 +89,15 @@
       <div class="empty-state"><h2>No hay personas todavía</h2><p>Agrega personas antes de planificar los turnos.</p><a class="button button-primary" href="{% url 'people' %}">Ir a Personas</a></div>
     {% else %}
       <table class="schedule-table">
-        <thead><tr><th class="person-heading">Persona</th>
-          {% for day in days %}<th class="{% if day.is_today %}today-heading{% endif %}">{{ day.label }}<span>{{ day.date|date:'d/m' }}</span></th>{% endfor %}
-          <th class="rest-count-column">Descansos</th>
+        <caption class="sr-only">Grilla semanal de turnos: personas y días · {{ week_label }}</caption>
+        <thead><tr><th scope="col" class="person-heading">Persona</th>
+          {% for day in days %}<th scope="col" class="{% if day.is_today %}today-heading{% endif %}">{{ day.label }}<span>{{ day.date|date:'d/m' }}</span></th>{% endfor %}
+          <th scope="col" class="rest-count-column">Descansos</th>
         </tr></thead>
         <tbody>
         {% for row in rows %}
           <tr>
-            <th scope="row" class="person-name"><span class="avatar">{{ row.person.name|slice:":1"|upper }}</span><span>{{ row.display_name|capitalize }}</span></th>
+            <th scope="row" class="person-name"><span class="avatar" aria-hidden="true">{{ row.person.name|slice:":1"|upper }}</span><span>{{ row.display_name|capitalize }}</span></th>
             {% for cell in row.cells %}
               <td title="{{ row.display_name|capitalize }}">
                 {% if cell.on_vacation %}
@@ -104,6 +105,7 @@
                 {% else %}
                   <a class="shift-cell {% if cell.assignment %}{% if cell.assignment.branch_id %}assigned-cell{% else %}rest-cell{% endif %}{% else %}empty-cell{% endif %}"
                     {% if cell.branch %}style="--branch-color: {{ cell.branch.color }}"{% endif %}
+                    {% if not cell.assignment %}aria-label="Asignar turno de {{ row.display_name|capitalize }} el {{ cell.day.label }} {{ cell.day.date|date:'d/m/Y' }}"{% endif %}
                     href="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}&amp;branch={{ branch_filter }}"
                     hx-get="{% url week_route week_start|date:'Y-m-d' %}?edit={{ row.person.pk }}-{{ cell.day.index }}&amp;filter={{ filter_key }}&amp;branch={{ branch_filter }}"
                     hx-target="#page-content" hx-swap="innerHTML">
@@ -127,7 +129,7 @@
                         {% endif %}
                       {% elif cell.assignment.assignment_type == 'incapacity' %}<strong>Incapacidad</strong>
                       {% else %}<strong>Descanso</strong><span>Libre</span>{% endif %}
-                    {% else %}<span class="add-mark">+</span>{% endif %}
+                    {% else %}<span class="add-mark" aria-hidden="true">+</span>{% endif %}
                   </a>
                 {% endif %}
                 {% if novelties_mode and cell.historical_novelties %}
@@ -186,7 +188,7 @@
             <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar novedad</button></div>
           </form>
         {% else %}
-          {% if not has_branches %}<div class="notice notice-warning">Crea una sucursal antes de asignar un turno.</div>{% endif %}
+          {% if not has_branches %}<div class="notice notice-warning" role="alert">Crea una sucursal antes de asignar un turno.</div>{% endif %}
           <form method="post" action="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-post="{% url 'assignment_save' week_start|date:'Y-m-d' edit_person.pk edit_day %}" hx-target="#page-content" hx-swap="innerHTML">
             {% csrf_token %}
             <input type="hidden" name="branch_filter" value="{{ branch_filter }}">
