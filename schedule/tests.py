@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from io import BytesIO
 
 from django.db import connection
@@ -397,6 +397,81 @@ class LegacyDatabaseViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("analysis_unlock"), response["Location"])
+
+    def _unlock_logs(self):
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+
+    def test_logs_can_be_filtered_by_date_range_and_person(self):
+        self._unlock_logs()
+        january_entry = AuditLog.objects.create(
+            ip_address="203.0.113.10",
+            action="Turno guardado",
+            details="Ana Torres · Lun 05/01/2026 · Centro · 08:00–16:00",
+        )
+        february_entry = AuditLog.objects.create(
+            ip_address="203.0.113.11",
+            action="Turno guardado",
+            details="Ana Torres · Lun 02/02/2026 · Centro · 08:00–16:00",
+        )
+        other_person_entry = AuditLog.objects.create(
+            ip_address="203.0.113.12",
+            action="Turno guardado",
+            details="Luis Pérez · Lun 05/01/2026 · Centro · 08:00–16:00",
+        )
+        AuditLog.objects.filter(pk=january_entry.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 1, 5, 10, 0))
+        )
+        AuditLog.objects.filter(pk=february_entry.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 2, 2, 10, 0))
+        )
+        AuditLog.objects.filter(pk=other_person_entry.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 1, 5, 11, 0))
+        )
+
+        response = self.client.get(
+            reverse("logs"),
+            {"start": "2026-01-01", "end": "2026-01-31", "person": "Ana Torres"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "203.0.113.10")
+        self.assertNotContains(response, "203.0.113.11")
+        self.assertNotContains(response, "203.0.113.12")
+
+    def test_logs_with_invalid_or_inverted_dates_do_not_break(self):
+        self._unlock_logs()
+        AuditLog.objects.create(
+            ip_address="203.0.113.30",
+            action="Turno guardado",
+            details="Ana Torres · Lun 05/01/2026 · Centro · 08:00–16:00",
+        )
+
+        invalid_response = self.client.get(
+            reverse("logs"), {"start": "no-es-fecha", "end": "2026-13-40"}
+        )
+        inverted_response = self.client.get(
+            reverse("logs"), {"start": "2026-02-01", "end": "2026-01-01"}
+        )
+
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertContains(invalid_response, "203.0.113.30")
+        self.assertEqual(inverted_response.status_code, 200)
+
+    def test_logs_pagination_keeps_active_filters(self):
+        self._unlock_logs()
+        for index in range(51):
+            AuditLog.objects.create(
+                ip_address="203.0.113.20",
+                action="Turno guardado",
+                details=f"Ana Torres · registro {index}",
+            )
+
+        response = self.client.get(reverse("logs"), {"person": "Ana Torres"})
+
+        self.assertContains(response, "page=2")
+        self.assertContains(response, "person=Ana+Torres")
 
     def test_invalid_assignment_is_not_logged(self):
         response = self.client.post(

@@ -794,12 +794,50 @@ def branch_delete(request, branch_id):
     return redirect("branches")
 
 
+def _parse_log_date(value):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def logs(request):
     if request.session.get("analysis_authenticated") is not True:
         return _analysis_unlock_redirect(request)
-    paginator = Paginator(AuditLog.objects.all(), 50)
+    start_date = _parse_log_date(request.GET.get("start", "").strip())
+    end_date = _parse_log_date(request.GET.get("end", "").strip())
+    if start_date and end_date and end_date < start_date:
+        start_date, end_date = end_date, start_date
+    person_filter = request.GET.get("person", "").strip()
+    queryset = AuditLog.objects.all()
+    if start_date:
+        queryset = queryset.filter(created_at__date__gte=start_date)
+    if end_date:
+        queryset = queryset.filter(created_at__date__lte=end_date)
+    if person_filter:
+        queryset = queryset.filter(details__startswith=person_filter)
+    paginator = Paginator(queryset, 50)
     page_obj = paginator.get_page(request.GET.get("page"))
-    return render_screen(request, "logs/content.html", {"page_obj": page_obj})
+    filter_query = urlencode({
+        key: value
+        for key, value in (
+            ("start", start_date.isoformat() if start_date else ""),
+            ("end", end_date.isoformat() if end_date else ""),
+            ("person", person_filter),
+        )
+        if value
+    })
+    return render_screen(request, "logs/content.html", {
+        "page_obj": page_obj,
+        "start_value": start_date.isoformat() if start_date else "",
+        "end_value": end_date.isoformat() if end_date else "",
+        "person_filter": person_filter,
+        "person_options": sorted({person.name for person in Person.objects.all()}),
+        "has_filters": bool(filter_query),
+        "filter_query": filter_query,
+    })
 
 
 def analysis(request):

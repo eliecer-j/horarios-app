@@ -1,7 +1,21 @@
 <section class="page-stack">
   <header class="page-header">
-    <div><p class="eyebrow">Auditoría</p><h1>Logs</h1><p class="muted">{{ page_obj.paginator.count }} cambios registrados</p></div>
+    <div><p class="eyebrow">Auditoría</p><h1>Logs</h1><p class="muted">{{ page_obj.paginator.count }} cambios registrados{% if has_filters %} con los filtros aplicados{% endif %}</p></div>
   </header>
+  <form class="logs-toolbar card" method="get" action="{% url 'logs' %}" hx-get="{% url 'logs' %}" hx-target="#page-content">
+    <label class="form-field"><span>Desde</span><input class="form-control" type="date" name="start" value="{{ start_value }}"></label>
+    <label class="form-field"><span>Hasta</span><input class="form-control" type="date" name="end" value="{{ end_value }}"></label>
+    <label class="form-field"><span>Persona</span>
+      <select class="form-control" name="person">
+        <option value="">Todas</option>
+        {% for option in person_options %}<option value="{{ option }}"{% if option == person_filter %} selected{% endif %}>{{ option }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="logs-toolbar-actions">
+      <button class="button button-secondary" type="submit">Filtrar</button>
+      {% if has_filters %}<a class="button button-ghost" href="{% url 'logs' %}" hx-get="{% url 'logs' %}" hx-target="#page-content">Limpiar</a>{% endif %}
+    </div>
+  </form>
   <div class="schedule-wrap card">
     <table class="data-table logs-table">
       <caption class="sr-only">Historial de cambios</caption>
@@ -15,7 +29,7 @@
             <td>{{ entry.details|default:"—" }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="4" class="logs-empty">Aún no hay cambios registrados.</td></tr>
+          <tr><td colspan="4" class="logs-empty">{% if has_filters %}No hay registros para los filtros seleccionados.{% else %}Aún no hay cambios registrados.{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -23,11 +37,11 @@
   {% if page_obj.has_other_pages %}
     <nav class="logs-pagination" aria-label="Paginación de logs">
       {% if page_obj.has_previous %}
-        <a class="button button-secondary small-button" href="?page={{ page_obj.previous_page_number }}" hx-get="{% url 'logs' %}?page={{ page_obj.previous_page_number }}" hx-target="#page-content">← Anterior</a>
+        <a class="button button-secondary small-button" href="?page={{ page_obj.previous_page_number }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" hx-get="{% url 'logs' %}?page={{ page_obj.previous_page_number }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" hx-target="#page-content">← Anterior</a>
       {% endif %}
       <span class="muted">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
       {% if page_obj.has_next %}
-        <a class="button button-secondary small-button" href="?page={{ page_obj.next_page_number }}" hx-get="{% url 'logs' %}?page={{ page_obj.next_page_number }}" hx-target="#page-content">Siguiente →</a>
+        <a class="button button-secondary small-button" href="?page={{ page_obj.next_page_number }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" hx-get="{% url 'logs' %}?page={{ page_obj.next_page_number }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" hx-target="#page-content">Siguiente →</a>
       {% endif %}
     </nav>
   {% endif %}

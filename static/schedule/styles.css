@@ -208,6 +208,9 @@ button, input, select { font: inherit; }
 .logs-table td:last-child { white-space: normal; text-align: left; }
 .logs-empty { padding: 32px !important; color: hsl(var(--muted)); text-align: center !important; }
 .logs-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.logs-toolbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; padding: 13px; }
+.logs-toolbar .form-field { flex: 0 1 180px; }
+.logs-toolbar-actions { display: flex; align-items: center; gap: 8px; }
 .total-row { font-weight: 700; background: hsl(var(--muted) / .08); }
 .metric-negative { color: hsl(var(--danger)); font-weight: 600; }
 .metric-positive { color: hsl(var(--success)); font-weight: 600; }
@@ -281,6 +284,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .form-grid { grid-template-columns: 1fr; }
   .wide-field { grid-column: auto; }
   .analysis-toolbar { align-items: stretch; flex-direction: column; }
+  .logs-toolbar { align-items: stretch; flex-direction: column; }
+  .logs-toolbar .form-field { flex: 1 1 auto; }
 }
 @media (max-width: 650px) {
   .schedule-table { min-width: 740px; }
