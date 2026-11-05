@@ -48,7 +48,7 @@ def shift_metrics(start_time, end_time):
 def shift_segments_metrics(segments, lunch_minutes=0):
     worked_minutes = 0
     regular_minutes_remaining = REGULAR_DAY_MINUTES + lunch_minutes
-    daytime_gross = nighttime_gross = night_surcharge = 0
+    daytime_gross = nighttime_gross = 0
     for start_time, end_time in segments:
         start = _minutes_from_time(start_time)
         end = _minutes_from_time(end_time)
@@ -63,8 +63,6 @@ def shift_segments_metrics(segments, lunch_minutes=0):
                 <= clock_minute
                 < DAY_SHIFT_END_HOUR * 60
             )
-            if not is_daytime:
-                night_surcharge += 1
             if offset < overtime_start:
                 continue
             if is_daytime:
@@ -81,7 +79,6 @@ def shift_segments_metrics(segments, lunch_minutes=0):
         overtime / 60,
         daytime_gross / 60,
         nighttime_gross / 60,
-        night_surcharge / 60,
     )
 
 
@@ -118,7 +115,6 @@ def assignment_period_metrics(people, assignments):
             "worked": round(metrics[0] * 60),
             "daytime_gross": round(metrics[2] * 60),
             "nighttime_gross": round(metrics[3] * 60),
-            "night_surcharge": round(metrics[4] * 60),
             "daytime_shortfall": max(0, REGULAR_DAY_MINUTES - round(metrics[0] * 60)),
         })
 
@@ -135,7 +131,6 @@ def assignment_period_metrics(people, assignments):
                 "overtime": daytime + nighttime,
                 "daytime": daytime,
                 "nighttime": nighttime,
-                "night_surcharge": row["night_surcharge"],
             }
     return daily_metrics
 
@@ -150,7 +145,6 @@ def summarize_period(people, assignments, daily_metrics=None):
             "overtime": 0,
             "daytime": 0,
             "nighttime": 0,
-            "night_surcharge": 0,
         }
         for person in people
     }
@@ -158,7 +152,7 @@ def summarize_period(people, assignments, daily_metrics=None):
         person_id = assignments[index][1]
         person_minutes = period_minutes[person_id]
         person_minutes["days"] += 1
-        for key in ("worked", "overtime", "daytime", "nighttime", "night_surcharge"):
+        for key in ("worked", "overtime", "daytime", "nighttime"):
             person_minutes[key] += metrics[key]
 
     summaries = {}
@@ -168,7 +162,6 @@ def summarize_period(people, assignments, daily_metrics=None):
         "overtime": 0.0,
         "daytime": 0.0,
         "nighttime": 0.0,
-        "night_surcharge": 0.0,
     }
     for person_id, values in period_minutes.items():
         summary = {
@@ -177,7 +170,6 @@ def summarize_period(people, assignments, daily_metrics=None):
             "overtime": values["overtime"] / 60,
             "daytime": values["daytime"] / 60,
             "nighttime": values["nighttime"] / 60,
-            "night_surcharge": values["night_surcharge"] / 60,
         }
         summaries[person_id] = summary
         for key, value in summary.items():
