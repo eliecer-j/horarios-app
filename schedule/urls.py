@@ -27,6 +27,11 @@ urlpatterns = [
         name="vacation_period_delete",
     ),
     path("people/<int:person_id>/delete/", views.person_delete, name="person_delete"),
+    path(
+        "people/<int:person_id>/toggle/",
+        views.person_toggle_active,
+        name="person_toggle_active",
+    ),
     path("branches/", views.branches, name="branches"),
     path("branches/<int:branch_id>/delete/", views.branch_delete, name="branch_delete"),
     path("analysis/", views.analysis, name="analysis"),

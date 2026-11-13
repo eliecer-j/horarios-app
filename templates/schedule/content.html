@@ -128,6 +128,7 @@
                           <span>{{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}{% if cell.assignment.start_time_2 and cell.assignment.end_time_2 %} / {{ cell.assignment.start_time_2 }}–{{ cell.assignment.end_time_2 }}{% endif %}</span>
                         {% endif %}
                       {% elif cell.assignment.assignment_type == 'incapacity' %}<strong>Incapacidad</strong>
+                      {% elif cell.assignment.assignment_type == 'absent' %}<strong>No se presentó</strong>
                       {% else %}<strong>Descanso</strong><span>Libre</span>{% endif %}
                     {% else %}<span class="add-mark" aria-hidden="true">+</span>{% endif %}
                   </a>

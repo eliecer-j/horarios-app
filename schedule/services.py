@@ -145,6 +145,8 @@ def attach_vacation_ranges(people):
 def save_assignment(week_start, person_id, day, form):
     assigned_date = week_start + timedelta(days=day)
     person = Person.objects.get(pk=person_id)
+    if not person.is_active:
+        raise ValueError("No se pueden asignar turnos a una persona deshabilitada.")
     if is_on_vacation(person, assigned_date):
         raise ValueError("No se pueden asignar turnos durante las vacaciones.")
 
@@ -162,7 +164,7 @@ def save_assignment(week_start, person_id, day, form):
             ))
         return
 
-    if status in ("rest", "incapacity"):
+    if status in ("rest", "incapacity", "absent"):
         branch_id, start_time, end_time, start_time_2, end_time_2 = (
             None, None, None, None, None
         )
@@ -190,7 +192,7 @@ def save_assignment(week_start, person_id, day, form):
                     end_time, status, start_time_2, end_time_2,
                 ],
             )
-        if status in ("rest", "incapacity") or (
+        if status in ("rest", "incapacity", "absent") or (
             status == "work"
             and current is not None
             and current["branch_id"] != branch_id

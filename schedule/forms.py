@@ -106,6 +106,7 @@ class AssignmentForm(forms.Form):
         ("split_shift", "Turno partido"),
         ("rest", "Descanso"),
         ("incapacity", "Incapacidad"),
+        ("absent", "No se presentó"),
         ("unassigned", "Sin asignar"),
     )
     status = forms.ChoiceField(choices=STATUS_CHOICES, label="Tipo", initial="work")

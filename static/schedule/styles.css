@@ -191,6 +191,11 @@ button, input, select { font: inherit; }
 .list-card { overflow: hidden; }
 .person-row { display: flex; align-items: center; gap: 13px; padding: 14px 17px; border-bottom: 1px solid hsl(var(--border)); }
 .person-row:last-child { border-bottom: 0; }
+.person-row-inactive { background: hsl(var(--muted) / .05); }
+.person-row-inactive .avatar,
+.person-row-inactive .row-main { opacity: .62; }
+.status-pill { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; vertical-align: middle; }
+.status-pill-muted { background: hsl(var(--muted) / .16); color: hsl(var(--muted)); }
 .row-main { min-width: 0; flex: 1; }
 .row-main h2 { overflow-wrap: anywhere; }
 .row-main p { margin: 4px 0 0; font-size: 12px; }

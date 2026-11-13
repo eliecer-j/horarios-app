@@ -122,7 +122,7 @@ def _schedule_context(
 ):
     branch_filter = str(branch_filter or "").strip()
     branch_id = int(branch_filter) if branch_filter.isdigit() else None
-    people = attach_vacation_ranges(Person.objects.all())
+    people = attach_vacation_ranges(Person.objects.filter(is_active=True))
     branches = list(Branch.objects.all())
     assignments = week_assignments(week_start)
     novelties = week_novelties(week_start)
@@ -238,7 +238,9 @@ def schedule(request, week_start):
     if edit_value:
         try:
             person_id, day = map(int, edit_value.split("-", 1))
-            if day not in range(7) or not Person.objects.filter(pk=person_id).exists():
+            if day not in range(7) or not Person.objects.filter(
+                pk=person_id, is_active=True
+            ).exists():
                 raise ValueError
             edit = (person_id, day)
             current = week_assignments(week_start).get(edit)
@@ -281,7 +283,9 @@ def novelties_week(request, week_start):
     if edit_value:
         try:
             person_id, day = map(int, edit_value.split("-", 1))
-            if day not in range(7) or not Person.objects.filter(pk=person_id).exists():
+            if day not in range(7) or not Person.objects.filter(
+                pk=person_id, is_active=True
+            ).exists():
                 raise ValueError
             assignment = week_assignments(week_start).get((person_id, day))
             if assignment and assignment["branch_id"] is not None:
@@ -325,7 +329,7 @@ def novelty_save(request, week_start, person_id, day):
     if day not in range(7):
         raise Http404("El día solicitado no es válido.")
     try:
-        Person.objects.get(pk=person_id)
+        Person.objects.get(pk=person_id, is_active=True)
     except Person.DoesNotExist as exc:
         raise Http404("La persona solicitada no existe.") from exc
     assignment = week_assignments(week_start).get((person_id, day))
@@ -403,7 +407,7 @@ def novelty_history_delete(request, week_start, person_id, day):
     week_start = _parse_week(week_start)
     if day not in range(7):
         raise Http404("El día solicitado no es válido.")
-    if not Person.objects.filter(pk=person_id).exists():
+    if not Person.objects.filter(pk=person_id, is_active=True).exists():
         raise Http404("La persona solicitada no existe.")
 
     deleted_count, _ = AssignmentNovelty.objects.filter(
@@ -438,7 +442,11 @@ def _assignment_log_description(assignment):
     if assignment is None:
         return "Sin asignación"
     if assignment["branch_id"] is None:
-        return "Incapacidad" if assignment["assignment_type"] == "incapacity" else "Descanso"
+        if assignment["assignment_type"] == "incapacity":
+            return "Incapacidad"
+        if assignment["assignment_type"] == "absent":
+            return "No se presentó"
+        return "Descanso"
     branch_name = Branch.objects.filter(pk=assignment["branch_id"]).values_list(
         "name", flat=True
     ).first() or "Sucursal eliminada"
@@ -466,7 +474,7 @@ def assignment_save(request, week_start, person_id, day):
     week_start = _parse_week(week_start)
     if day not in range(7):
         raise Http404("El día solicitado no es válido.")
-    if not Person.objects.filter(pk=person_id).exists():
+    if not Person.objects.filter(pk=person_id, is_active=True).exists():
         raise Http404("La persona solicitada no existe.")
     form = AssignmentForm(request.POST)
     try:
@@ -477,12 +485,12 @@ def assignment_save(request, week_start, person_id, day):
             elif form.cleaned_data["status"] == "rest":
                 updated = {"branch_id": None, "start_time": None, "end_time": None}
                 updated["assignment_type"] = "rest"
-            elif form.cleaned_data["status"] == "incapacity":
+            elif form.cleaned_data["status"] in ("incapacity", "absent"):
                 updated = {
                     "branch_id": None,
                     "start_time": None,
                     "end_time": None,
-                    "assignment_type": "incapacity",
+                    "assignment_type": form.cleaned_data["status"],
                     "start_time_2": None,
                     "end_time_2": None,
                 }
@@ -522,6 +530,9 @@ def assignment_save(request, week_start, person_id, day):
                     assignment_details = f"Antes: Sin asignación → Ahora: {_assignment_log_description(updated)}"
                 elif form.cleaned_data["status"] == "incapacity":
                     action = "Incapacidad asignada"
+                    assignment_details = f"Antes: Sin asignación → Ahora: {_assignment_log_description(updated)}"
+                elif form.cleaned_data["status"] == "absent":
+                    action = "No se presentó asignado"
                     assignment_details = f"Antes: Sin asignación → Ahora: {_assignment_log_description(updated)}"
                 else:
                     action = "Turno guardado"
@@ -659,6 +670,8 @@ def people(request):
         "message": message,
         "week_label": _week_label(week_start),
         "total_people": Person.objects.count(),
+        "active_people": Person.objects.filter(is_active=True).count(),
+        "inactive_people": Person.objects.filter(is_active=False).count(),
         "hide_vacations": hide_vacations,
     })
 
@@ -677,6 +690,31 @@ def person_delete(request, person_id):
     request.method = "GET"
     request.GET = request.GET.copy()
     request.GET["message"] = "Persona eliminada junto con sus turnos."
+    return people(request)
+
+
+@require_POST
+def person_toggle_active(request, person_id):
+    try:
+        person = Person.objects.get(pk=person_id)
+    except Person.DoesNotExist as exc:
+        raise Http404("La persona solicitada no existe.") from exc
+    person.is_active = not person.is_active
+    person.save(update_fields=("is_active",))
+    if person.is_active:
+        _record_change(request, "Persona habilitada", person.name)
+        message = f"{person.name} vuelve a aparecer en las grillas y el análisis."
+    else:
+        _record_change(request, "Persona deshabilitada", person.name)
+        message = (
+            f"{person.name} quedó oculta de las grillas y el análisis. "
+            "Sus turnos e historial se conservan."
+        )
+    if request.headers.get("HX-Request") != "true":
+        return redirect("people")
+    request.method = "GET"
+    request.GET = request.GET.copy()
+    request.GET["message"] = message
     return people(request)
 
 
@@ -856,7 +894,7 @@ def analysis(request):
         raise Http404("La quincena solicitada no es válida.")
     start_date = date(year, month, 1 if fortnight == "1" else 16)
     end_date = date(year, month, 15 if fortnight == "1" else calendar.monthrange(year, month)[1])
-    people_list = list(Person.objects.all())
+    people_list = list(Person.objects.filter(is_active=True))
     assignments = assignments_between(start_date, end_date)
     summaries, totals = summarize_period(people_list, assignments)
     duplicate_names = name_counts(people_list)
@@ -928,7 +966,7 @@ def schedule_export(request):
     from schedule_export import build_schedule_workbook
 
     start_date, end_date = _parse_export_dates(request)
-    people_list = attach_vacation_ranges(Person.objects.all())
+    people_list = attach_vacation_ranges(Person.objects.filter(is_active=True))
     duplicate_names = {}
     for person in people_list:
         key = person.name.strip().lower()
@@ -969,5 +1007,7 @@ def analysis_export(request):
         raise Http404("Selecciona un período válido.") from exc
     start_date = date(year, month, 1 if fortnight == 1 else 16)
     end_date = date(year, month, 15 if fortnight == 1 else calendar.monthrange(year, month)[1])
-    payload = fortnight_workbook(start_date, end_date, list(Person.objects.all()))
+    payload = fortnight_workbook(
+        start_date, end_date, list(Person.objects.filter(is_active=True))
+    )
     return workbook_response(payload, f"turnos_{start_date:%Y-%m}_{start_date.day:02d}-{end_date.day:02d}.xlsx")

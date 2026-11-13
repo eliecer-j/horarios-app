@@ -6,6 +6,7 @@ class Person(models.Model):
     dni = models.CharField(max_length=100, null=True, blank=True)
     vacation_start = models.DateField(null=True, blank=True)
     vacation_end = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         managed = False

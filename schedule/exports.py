@@ -73,10 +73,16 @@ def fortnight_workbook(start_date, end_date, people):
         if person is None:
             continue
         if branch_id is None:
+            if assignment_type == "incapacity":
+                non_work_label = "Incapacidad"
+            elif assignment_type == "absent":
+                non_work_label = "No se presentó"
+            else:
+                non_work_label = "Descanso"
             row = [
                 person_display_name(person, duplicate_names),
                 f"{day_names[assigned_date.weekday()]} {assigned_date:%d/%m/%Y}",
-                "Incapacidad" if assignment_type == "incapacity" else "Descanso",
+                non_work_label,
                 "", "", 0, 0, 0, 0, "",
             ]
         else:

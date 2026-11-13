@@ -106,11 +106,12 @@ def build_schedule_workbook(start_date, end_date, people, assignments, branches,
                     start_time_2, end_time_2,
                 ) = assignment
                 if branch_id is None:
-                    cell.value = (
-                        "Incapacidad"
-                        if assignment_type == "incapacity"
-                        else "Descanso"
-                    )
+                    if assignment_type == "incapacity":
+                        cell.value = "Incapacidad"
+                    elif assignment_type == "absent":
+                        cell.value = "No se presentó"
+                    else:
+                        cell.value = "Descanso"
                     cell.fill = rest_fill
                     if assignment_type == "rest":
                         rest_count += 1

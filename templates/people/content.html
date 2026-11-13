@@ -1,6 +1,6 @@
 <section class="page-stack">
   <header class="page-header">
-    <div><p class="eyebrow">Equipo</p><h1>Personas</h1><p class="muted">{{ total_people }} en el equipo · DNI opcional · Vacaciones</p></div>
+    <div><p class="eyebrow">Equipo</p><h1>Personas</h1><p class="muted">{{ active_people }} activas · {{ inactive_people }} deshabilitadas · DNI opcional · Vacaciones</p></div>
     <a class="button button-primary" href="{% url 'people' %}?new=1" hx-get="{% url 'people' %}?new=1" hx-target="#page-content">＋ Nueva persona</a>
   </header>
   {% if message %}<div class="notice notice-success" role="status">{{ message }}</div>{% endif %}
@@ -31,9 +31,9 @@
   {% endif %}
   <section class="card list-card">
     {% for person in people %}
-      <article class="person-row">
+      <article class="person-row{% if not person.is_active %} person-row-inactive{% endif %}">
         <span class="avatar avatar-large" aria-hidden="true">{{ person.name|slice:":1"|upper }}</span>
-        <div class="row-main"><h2>{{ person.display_name }}</h2><p class="muted">DNI: {{ person.dni|default:"no registrado" }} · {{ week_label }}: {{ person.week_work }} turnos, {{ person.week_rest }} descansos</p>
+        <div class="row-main"><h2>{{ person.display_name }}{% if not person.is_active %} <span class="status-pill status-pill-muted">Deshabilitada</span>{% endif %}</h2><p class="muted">DNI: {{ person.dni|default:"no registrado" }} · {{ week_label }}: {{ person.week_work }} turnos, {{ person.week_rest }} descansos</p>
           {% if not hide_vacations %}
           {% for vacation in person.vacation_periods_display %}
             <div class="vacation-detail-row">
@@ -50,6 +50,11 @@
         </div>
         <div class="row-actions">
           <a class="button button-secondary small-button" href="{% url 'people' %}?edit={{ person.pk }}" hx-get="{% url 'people' %}?edit={{ person.pk }}" hx-target="#page-content">Editar</a>
+          {% if person.is_active %}
+            <form method="post" action="{% url 'person_toggle_active' person.pk %}" hx-post="{% url 'person_toggle_active' person.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Deshabilitar a {{ person.display_name }}? No aparecerá en las grillas ni en el análisis, pero su información se conserva.">{% csrf_token %}<button class="button button-ghost small-button" type="submit">Deshabilitar</button></form>
+          {% else %}
+            <form method="post" action="{% url 'person_toggle_active' person.pk %}" hx-post="{% url 'person_toggle_active' person.pk %}" hx-target="#page-content" hx-swap="innerHTML">{% csrf_token %}<button class="button button-secondary small-button" type="submit">Habilitar</button></form>
+          {% endif %}
           <form method="post" action="{% url 'person_delete' person.pk %}" hx-post="{% url 'person_delete' person.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar a {{ person.display_name }} y todos sus turnos?">{% csrf_token %}<button class="button button-ghost danger-text" type="submit">Eliminar</button></form>
         </div>
       </article>

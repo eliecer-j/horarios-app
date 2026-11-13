@@ -39,8 +39,8 @@ Se puede seleccionar otra base de datos con la variable `DATABASE_PATH`. Antes d
 
 ## Funcionalidad
 
-- Navegar semanas, filtrar turnos pendientes y sin descanso y editar turnos normales o partidos (dos entradas y dos salidas), descansos o vacaciones.
-- Administrar personas, DNI opcional, sucursales y vacaciones.
+- Navegar semanas, filtrar turnos pendientes y sin descanso y editar turnos normales o partidos (dos entradas y dos salidas), descansos, incapacidades, inasistencias (“No se presentó”) o vacaciones. Los descansos, las incapacidades y las inasistencias no contabilizan horas de trabajo.
+- Administrar personas, DNI opcional, sucursales y vacaciones. Una persona puede deshabilitarse sin borrar su información: deja de aparecer en las grillas, Novedades, Análisis y las exportaciones, y se puede volver a habilitar cuando haga falta.
 - Registrar en Novedades llegadas tarde, ausencias y calamidades, con observación opcional para estas dos últimas, protegidas por la misma contraseña que Análisis.
 - Descargar grillas por rango de fechas y análisis quincenales en Excel.
 - Consultar reportes de horas trabajadas, extra, diurnas y nocturnas; la jornada normal es de 7 h trabajadas y a partir de la 8.ª hora trabajada se liquida como extra; en los turnos partidos no se cuenta el intervalo entre jornadas, las llegadas tarde se calculan desde la hora real registrada y los turnos continuos de 6 h o más que empiezan antes de las 14:00 y pasan por las 13:00–13:59 descuentan 1 h de almuerzo.

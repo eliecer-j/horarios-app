@@ -315,6 +315,50 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         self.assertEqual(edit_response.context["edit_form"]["status"].value(), "incapacity")
 
+    def test_absent_is_saved_displayed_and_counts_zero_worked_hours(self):
+        response = self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
+            {"status": "absent"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No se presentó")
+        assignment = week_assignments(self.week_start)[(self.person.pk, 0)]
+        self.assertEqual(assignment["assignment_type"], "absent")
+        self.assertIsNone(assignment["branch_id"])
+        self.assertIsNone(assignment["start_time"])
+        self.assertIsNone(assignment["end_time"])
+        assignments = assignments_between(self.week_start, self.week_start)
+        self.assertEqual(assignments[0][8], "absent")
+        daily_metrics = assignment_period_metrics([self.person], assignments)
+        summaries, _ = summarize_period([self.person], assignments, daily_metrics)
+        self.assertEqual(daily_metrics, {})
+        self.assertEqual(summaries[self.person.pk]["worked"], 0)
+        self.assertEqual(summaries[self.person.pk]["days"], 0)
+        workbook = load_workbook(
+            BytesIO(fortnight_workbook(self.week_start, self.week_start, [self.person])),
+            read_only=True,
+        )
+        self.assertEqual(workbook.active["C8"].value, "No se presentó")
+        self.assertEqual(workbook.active["F8"].value, 0)
+
+        export_response = self.client.get(
+            reverse("schedule_export"),
+            {"start": self.week_start.isoformat(), "end": self.week_start.isoformat()},
+        )
+        export_sheet = load_workbook(
+            BytesIO(export_response.content), read_only=True
+        ).active
+        self.assertEqual(export_sheet["B3"].value, "No se presentó")
+        self.assertEqual(export_sheet["C3"].value, 0)
+
+        edit_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()]),
+            {"edit": f"{self.person.pk}-0"},
+        )
+        self.assertEqual(edit_response.context["edit_form"]["status"].value(), "absent")
+
     def test_assignment_change_is_logged_with_ip_and_visible_in_logs(self):
         response = self.client.post(
             reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
@@ -513,6 +557,150 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, 'id="person-form-card"', html=False)
         self.assertContains(response, 'name="vacation_start" value="2026-10-12"', html=False)
         self.assertContains(response, 'name="vacation_end" value="2026-10-19"', html=False)
+
+    def _insert_shift(self, person, day=0, branch=None):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, %s, %s, '08:00', '16:00', 'work')",
+                [
+                    self.week_start.isoformat(),
+                    person.pk,
+                    day,
+                    (branch or self.branch).pk,
+                ],
+            )
+
+    def _unlock_analysis(self):
+        session = self.client.session
+        session["analysis_authenticated"] = True
+        session.save()
+
+    def test_disabled_person_is_hidden_from_schedule_and_novelties(self):
+        self.person.is_active = False
+        self.person.save()
+
+        schedule_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertEqual(schedule_response.status_code, 200)
+        self.assertNotContains(schedule_response, "Ana Torres")
+
+        self._unlock_analysis()
+        novelties_response = self.client.get(
+            reverse("novelties_week", args=[self.week_start.isoformat()])
+        )
+        self.assertEqual(novelties_response.status_code, 200)
+        self.assertNotContains(novelties_response, "Ana Torres")
+
+    def test_disabled_person_is_hidden_from_analysis_and_exports(self):
+        self._insert_shift(self.person)
+        self.person.is_active = False
+        self.person.save()
+        self._unlock_analysis()
+        month = self.week_start.strftime("%Y-%m")
+        fortnight = "1" if self.week_start.day <= 15 else "2"
+
+        analysis_response = self.client.get(
+            reverse("analysis"), {"month": month, "fortnight": fortnight}
+        )
+        self.assertEqual(analysis_response.status_code, 200)
+        self.assertNotContains(analysis_response, "Ana Torres")
+
+        analysis_export = self.client.get(
+            reverse("analysis_export"), {"month": month, "fortnight": fortnight}
+        )
+        self.assertEqual(analysis_export.status_code, 200)
+        analysis_sheet = load_workbook(
+            BytesIO(analysis_export.content), read_only=True
+        ).active
+        self.assertEqual(analysis_sheet["A3"].value, "TOTAL")
+
+        schedule_export = self.client.get(
+            reverse("schedule_export"),
+            {"start": self.week_start.isoformat(), "end": self.week_start.isoformat()},
+        )
+        self.assertEqual(schedule_export.status_code, 200)
+        schedule_sheet = load_workbook(
+            BytesIO(schedule_export.content), read_only=True
+        ).active
+        self.assertIsNone(schedule_sheet["A3"].value)
+
+    def test_disabled_person_keeps_assignments_and_can_be_reenabled(self):
+        self._insert_shift(self.person)
+
+        toggle = self.client.post(
+            reverse("person_toggle_active", args=[self.person.pk]),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(toggle.status_code, 200)
+        self.assertContains(toggle, "Deshabilitada")
+        self.person.refresh_from_db()
+        self.assertFalse(self.person.is_active)
+        self.assertIn((self.person.pk, 0), week_assignments(self.week_start))
+        self.assertTrue(
+            AuditLog.objects.filter(action="Persona deshabilitada", details="Ana Torres").exists()
+        )
+
+        schedule_after_disable = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertNotContains(schedule_after_disable, "Ana Torres")
+
+        reenable = self.client.post(
+            reverse("person_toggle_active", args=[self.person.pk]),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(reenable.status_code, 200)
+        self.person.refresh_from_db()
+        self.assertTrue(self.person.is_active)
+        self.assertContains(reenable, "Ana Torres")
+        self.assertContains(reenable, "1 activas · 0 deshabilitadas")
+        schedule_after_reenable = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertContains(schedule_after_reenable, "Ana Torres")
+        self.assertContains(schedule_after_reenable, "Centro")
+        self.assertTrue(
+            AuditLog.objects.filter(action="Persona habilitada", details="Ana Torres").exists()
+        )
+
+    def test_disabled_person_cannot_receive_new_assignments(self):
+        self.person.is_active = False
+        self.person.save()
+
+        assignment_response = self.client.post(
+            reverse(
+                "assignment_save",
+                args=[self.week_start.isoformat(), self.person.pk, 0],
+            ),
+            {"status": "work", "branch": self.branch.pk, "start_time": "08:00", "end_time": "16:00"},
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(assignment_response.status_code, 404)
+
+        self._unlock_analysis()
+        novelty_response = self.client.post(
+            reverse(
+                "novelty_save",
+                args=[self.week_start.isoformat(), self.person.pk, 0],
+            ),
+            {"kind": "late_arrival", "actual_start_time": "08:30"},
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(novelty_response.status_code, 404)
+
+    def test_people_page_shows_disabled_state_and_counts(self):
+        self.person.is_active = False
+        self.person.save()
+
+        response = self.client.get(reverse("people"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ana Torres")
+        self.assertContains(response, "Deshabilitada")
+        self.assertContains(response, "0 activas · 1 deshabilitadas")
+        self.assertContains(response, "Habilitar")
 
     def test_branches_page_uses_legacy_table(self):
         response = self.client.get(reverse("branches"))
