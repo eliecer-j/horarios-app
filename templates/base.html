@@ -101,6 +101,8 @@
       updateSplitShiftFields();
       const dialog = document.getElementById("assignment-dialog");
       if (dialog && !dialog.open) dialog.showModal();
+      const analysisDialog = document.getElementById("analysis-detail-dialog");
+      if (analysisDialog && !analysisDialog.open) analysisDialog.showModal();
       const personForm = document.getElementById("person-form-card");
       if (personForm) {
         personForm.scrollIntoView({block: "start", behavior: "instant"});
@@ -119,6 +121,8 @@
       updateSplitShiftFields();
       const dialog = document.getElementById("assignment-dialog");
       if (dialog && !dialog.open) dialog.showModal();
+      const analysisDialog = document.getElementById("analysis-detail-dialog");
+      if (analysisDialog && !analysisDialog.open) analysisDialog.showModal();
       const personForm = document.getElementById("person-form-card");
       if (personForm) personForm.scrollIntoView({block: "start", behavior: "instant"});
     });
@@ -180,6 +184,18 @@
         event.stopImmediatePropagation();
       }
     }, true);
+    document.body.addEventListener("click", function (event) {
+      const trigger = event.target.closest("[data-analysis-person]");
+      if (!trigger) return;
+      document.querySelectorAll("[data-analysis-person]").forEach(function (item) {
+        item.removeAttribute("aria-current");
+        const row = item.closest("tr");
+        if (row) row.classList.remove("is-selected");
+      });
+      trigger.setAttribute("aria-current", "true");
+      const selectedRow = trigger.closest("tr");
+      if (selectedRow) selectedRow.classList.add("is-selected");
+    });
     window.addEventListener("popstate", updateActiveNavigation);
     document.body.addEventListener("htmx:historyRestore", updateActiveNavigation);
   </script>

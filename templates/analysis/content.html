@@ -25,7 +25,13 @@
       <tbody>
       {% for person, metric in people_metrics %}
         <tr>
-          <th scope="row">{{ person.display_name }}</th>
+          <th scope="row">
+            <button type="button" class="analysis-person-button" data-analysis-person
+              hx-get="{% url 'analysis_person_detail' person.pk %}?month={{ month_value }}&amp;fortnight={{ fortnight }}"
+              hx-target="#analysis-detail-slot" hx-swap="innerHTML"
+              aria-haspopup="dialog" aria-controls="analysis-detail-slot"
+              title="Ver detalle diario de {{ person.display_name }}">{{ person.display_name }}</button>
+          </th>
           <td>{{ metric.days }}</td>
           <td>{{ metric.worked|floatformat:2 }}</td>
           <td class="{{ metric.overtime|signed_class }}">{{ metric.overtime|floatformat:2 }}</td>
@@ -51,4 +57,6 @@
     <span class="analysis-legend-item">HN: extra nocturna ({{ day_shift_end }}:00–{{ day_shift_start }}:00)</span>
   </div>
   <p class="form-hint">Los turnos continuos de {{ lunch_minimum_hours }} h o más que empiecen antes de {{ lunch_cutoff }} y pasen por {{ lunch_window }} descuentan {{ lunch_minutes }} min de almuerzo.</p>
+  <p class="form-hint">Haz clic en un nombre para ver el detalle día por día del período.</p>
+  <div id="analysis-detail-slot"></div>
 </section>

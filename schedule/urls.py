@@ -35,6 +35,11 @@ urlpatterns = [
     path("branches/", views.branches, name="branches"),
     path("branches/<int:branch_id>/delete/", views.branch_delete, name="branch_delete"),
     path("analysis/", views.analysis, name="analysis"),
+    path(
+        "analysis/person/<int:person_id>/",
+        views.analysis_person_detail,
+        name="analysis_person_detail",
+    ),
     path("analysis/unlock/", views.analysis_unlock, name="analysis_unlock"),
     path("logs/", views.logs, name="logs"),
     path("exports/schedule/", views.schedule_export, name="schedule_export"),

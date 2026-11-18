@@ -1,0 +1,55 @@
+{% load schedule_tags %}
+<dialog id="analysis-detail-dialog" class="modal modal-wide card" aria-labelledby="analysis-detail-title">
+  <div class="modal-header">
+    <div>
+      <p class="eyebrow">Detalle diario · {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }}</p>
+      <h2 id="analysis-detail-title">{{ display_name }}</h2>
+    </div>
+    <button type="button" class="icon-button" onclick="this.closest('dialog').close()" aria-label="Cerrar">×</button>
+  </div>
+  <div class="analysis-detail-summary">
+    <span><strong>{{ summary.days }}</strong> días</span>
+    <span><strong>{{ summary.worked|floatformat:2 }}</strong> h trabajadas</span>
+    <span><strong class="{{ summary.overtime|signed_class }}">{{ summary.overtime|floatformat:2 }}</strong> h extra</span>
+    <span><strong class="{{ summary.daytime|signed_class }}">{{ summary.daytime|floatformat:2 }}</strong> h diurnas</span>
+    <span><strong class="{{ summary.nighttime|signed_class }}">{{ summary.nighttime|floatformat:2 }}</strong> h nocturnas</span>
+  </div>
+  <div class="analysis-detail-scroll">
+    <table class="data-table analysis-detail-table">
+      <caption class="sr-only">Detalle diario de {{ display_name }} del {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Día</th>
+          <th scope="col">Sucursal</th>
+          <th scope="col">Inicio</th>
+          <th scope="col">Fin</th>
+          <th scope="col">Trabajadas</th>
+          <th scope="col">Extra</th>
+          <th scope="col" title="Horas extra diurnas ({{ day_shift_start }}:00–{{ day_shift_end }}:00).">HD</th>
+          <th scope="col" title="Horas extra nocturnas ({{ day_shift_end }}:00–{{ day_shift_start }}:00).">HN</th>
+          <th scope="col">Observación</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in rows %}
+        <tr{% if row.is_non_work %} class="analysis-detail-nonwork"{% endif %}>
+          <th scope="row">{{ row.day }}</th>
+          <td>{{ row.branch }}</td>
+          <td>{{ row.start|default:"—" }}</td>
+          <td>{{ row.end|default:"—" }}</td>
+          <td>{{ row.worked|floatformat:2 }}</td>
+          <td class="{{ row.overtime|signed_class }}">{{ row.overtime|floatformat:2 }}</td>
+          <td class="{{ row.daytime|signed_class }}">{{ row.daytime|floatformat:2 }}</td>
+          <td class="{{ row.nighttime|signed_class }}">{{ row.nighttime|floatformat:2 }}</td>
+          <td>{{ row.observation|default:"" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="9" class="logs-empty">No hay turnos registrados en este período.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="modal-actions">
+    <button type="button" class="button button-ghost" onclick="this.closest('dialog').close()">Cerrar</button>
+  </div>
+</dialog>

@@ -169,6 +169,7 @@ button, input, select { font: inherit; }
 .rest-count.warning { color: hsl(var(--danger)); background: hsl(var(--danger) / .1); }
 .empty-row { padding: 34px !important; color: hsl(var(--muted)); }
 .modal { width: min(490px, calc(100% - 28px)); max-width: none; max-height: calc(100dvh - 36px); overflow: auto; margin: auto; padding: 21px; border: 1px solid hsl(var(--border)); color: hsl(var(--foreground)); background: hsl(var(--card)); box-shadow: 0 20px 60px hsl(222 30% 5% / .24); }
+.modal-wide { width: min(1100px, calc(100% - 28px)); }
 .modal::backdrop { background: hsl(222 30% 5% / .48); }
 .modal-header, .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 15px; }
 .modal-header h2, .section-title h2, .branch-card h2, .person-row h2 { margin: 0; font-size: 16px; font-weight: 650; }
@@ -223,6 +224,18 @@ button, input, select { font: inherit; }
 .data-table th[title] { cursor: help; }
 .analysis-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
 .analysis-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.analysis-person-button { padding: 0; border: 0; background: none; color: hsl(var(--primary)); font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
+.analysis-person-button:hover { text-decoration: underline; }
+.analysis-table tbody tr.is-selected { background: hsl(var(--primary) / .10); }
+.analysis-table tbody tr.is-selected th { box-shadow: inset 3px 0 0 hsl(var(--primary)); }
+.analysis-detail-summary { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 13px; color: hsl(var(--muted)); font-size: 13px; }
+.analysis-detail-summary strong { color: hsl(var(--foreground)); font-variant-numeric: tabular-nums; }
+.analysis-detail-summary strong.metric-negative { color: hsl(var(--danger)); }
+.analysis-detail-summary strong.metric-positive { color: hsl(var(--success)); }
+.analysis-detail-scroll { max-height: 58vh; overflow: auto; border: 1px solid hsl(var(--border)); border-radius: 8px; }
+.analysis-detail-table { min-width: 820px; }
+.analysis-detail-table thead th { position: sticky; top: 0; z-index: 1; background: hsl(var(--card)); text-align: center; }
+.analysis-detail-nonwork th, .analysis-detail-nonwork td { color: hsl(var(--muted)); }
 .legend-swatch { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px; }
 .legend-negative { background: hsl(var(--danger)); }
 .legend-positive { background: hsl(var(--success)); }

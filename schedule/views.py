@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from .details import assignment_detail_rows
 from .exports import fortnight_workbook, workbook_response
 from .forms import AnalysisPasswordForm, AssignmentForm, BranchForm, LateArrivalForm, PersonForm
 from .metrics import (
@@ -25,6 +26,7 @@ from .metrics import (
     LUNCH_MINUTES,
     LUNCH_START_MINUTES,
     REGULAR_DAY_MINUTES,
+    assignment_period_metrics,
     summarize_period,
 )
 from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
@@ -878,9 +880,7 @@ def logs(request):
     })
 
 
-def analysis(request):
-    if request.session.get("analysis_authenticated") is not True:
-        return redirect("analysis_unlock")
+def _analysis_period(request, default_fortnight="current"):
     today = timezone.localdate()
     month_value = request.GET.get("month", today.strftime("%Y-%m"))
     try:
@@ -889,11 +889,24 @@ def analysis(request):
             raise ValueError
     except ValueError as exc:
         raise Http404("El mes solicitado no es válido.") from exc
-    fortnight = request.GET.get("fortnight", "1" if today.day <= 15 else "2")
+    if default_fortnight == "current":
+        default_fortnight = "1" if today.day <= 15 else "2"
+    fortnight = request.GET.get("fortnight", default_fortnight)
     if fortnight not in ("1", "2"):
         raise Http404("La quincena solicitada no es válida.")
     start_date = date(year, month, 1 if fortnight == "1" else 16)
-    end_date = date(year, month, 15 if fortnight == "1" else calendar.monthrange(year, month)[1])
+    end_date = date(
+        year,
+        month,
+        15 if fortnight == "1" else calendar.monthrange(year, month)[1],
+    )
+    return year, month, month_value, fortnight, start_date, end_date
+
+
+def analysis(request):
+    if request.session.get("analysis_authenticated") is not True:
+        return redirect("analysis_unlock")
+    year, month, month_value, fortnight, start_date, end_date = _analysis_period(request)
     people_list = list(Person.objects.filter(is_active=True))
     assignments = assignments_between(start_date, end_date)
     summaries, totals = summarize_period(people_list, assignments)
@@ -922,6 +935,34 @@ def analysis(request):
         ),
         "lunch_cutoff": f"{LUNCH_END_MINUTES // 60:02d}:00",
         "lunch_minutes": LUNCH_MINUTES,
+    })
+
+
+def analysis_person_detail(request, person_id):
+    if request.session.get("analysis_authenticated") is not True:
+        return _analysis_unlock_redirect(request)
+    try:
+        person = Person.objects.get(pk=person_id, is_active=True)
+    except Person.DoesNotExist as exc:
+        raise Http404("La persona solicitada no existe.") from exc
+    _, _, month_value, fortnight, start_date, end_date = _analysis_period(request)
+    assignments = assignments_between(start_date, end_date)
+    daily_metrics = assignment_period_metrics([person], assignments)
+    summaries, _totals = summarize_period([person], assignments, daily_metrics)
+    branches = {branch.pk: branch.name for branch in Branch.objects.all()}
+    rows = assignment_detail_rows([person], assignments, daily_metrics, branches)
+    duplicate_names = name_counts(Person.objects.filter(is_active=True))
+    return render_screen(request, "analysis/_person_detail.html", {
+        "person": person,
+        "display_name": person_display_name(person, duplicate_names),
+        "rows": rows,
+        "summary": summaries[person.pk],
+        "start_date": start_date,
+        "end_date": end_date,
+        "month_value": month_value,
+        "fortnight": fortnight,
+        "day_shift_start": DAY_SHIFT_START_HOUR,
+        "day_shift_end": DAY_SHIFT_END_HOUR,
     })
 
 
@@ -996,17 +1037,9 @@ def schedule_export(request):
 def analysis_export(request):
     if request.session.get("analysis_authenticated") is not True:
         return redirect("analysis_unlock")
-    today = timezone.localdate()
-    month_value = request.GET.get("month", today.strftime("%Y-%m"))
-    try:
-        year, month = map(int, month_value.split("-"))
-        fortnight = int(request.GET.get("fortnight", "1"))
-        if month not in range(1, 13) or fortnight not in (1, 2):
-            raise ValueError
-    except ValueError as exc:
-        raise Http404("Selecciona un período válido.") from exc
-    start_date = date(year, month, 1 if fortnight == 1 else 16)
-    end_date = date(year, month, 15 if fortnight == 1 else calendar.monthrange(year, month)[1])
+    _, _, _, _, start_date, end_date = _analysis_period(
+        request, default_fortnight="1"
+    )
     payload = fortnight_workbook(
         start_date, end_date, list(Person.objects.filter(is_active=True))
     )

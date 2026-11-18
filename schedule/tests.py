@@ -865,6 +865,100 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, "empiecen antes de 14:00")
         self.assertContains(response, "13:00–13:59")
 
+    def _analysis_params(self):
+        return {
+            "month": self.week_start.strftime("%Y-%m"),
+            "fortnight": "1" if self.week_start.day <= 15 else "2",
+        }
+
+    def test_analysis_names_open_the_detail_modal(self):
+        self._unlock_analysis()
+        response = self.client.get(reverse("analysis"), self._analysis_params())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-analysis-person")
+        self.assertContains(response, 'id="analysis-detail-slot"')
+        self.assertContains(
+            response,
+            reverse("analysis_person_detail", args=[self.person.pk]),
+        )
+
+    def test_analysis_person_detail_requires_analysis_session(self):
+        response = self.client.get(
+            reverse("analysis_person_detail", args=[self.person.pk]),
+            self._analysis_params(),
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("analysis_unlock"), response["Location"])
+
+    def test_analysis_person_detail_shows_day_by_day_rows(self):
+        self._insert_shift(self.person)
+        self._unlock_analysis()
+
+        response = self.client.get(
+            reverse("analysis_person_detail", args=[self.person.pk]),
+            self._analysis_params(),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="analysis-detail-dialog"')
+        self.assertContains(response, "Ana Torres")
+        self.assertContains(response, "Centro")
+        self.assertContains(response, "08:00")
+        self.assertContains(response, "16:00")
+        self.assertContains(response, "7,00")
+        self.assertEqual(response.context["summary"]["worked"], 7)
+        self.assertEqual(len(response.context["rows"]), 1)
+
+    def test_analysis_person_detail_respects_selected_period(self):
+        self._insert_shift(self.person)
+        self._unlock_analysis()
+
+        response = self.client.get(
+            reverse("analysis_person_detail", args=[self.person.pk]),
+            {"month": "2020-01", "fortnight": "1"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["rows"], [])
+        self.assertContains(response, "No hay turnos registrados en este período.")
+
+    def test_analysis_person_detail_includes_non_work_rows(self):
+        self.client.post(
+            reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]),
+            {"status": "absent"},
+            HTTP_HX_REQUEST="true",
+        )
+        self._unlock_analysis()
+
+        response = self.client.get(
+            reverse("analysis_person_detail", args=[self.person.pk]),
+            self._analysis_params(),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.context["rows"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["branch"], "No se presentó")
+        self.assertTrue(rows[0]["is_non_work"])
+        self.assertEqual(rows[0]["worked"], 0)
+
+    def test_analysis_person_detail_rejects_disabled_person(self):
+        self.person.is_active = False
+        self.person.save()
+        self._unlock_analysis()
+
+        response = self.client.get(
+            reverse("analysis_person_detail", args=[self.person.pk]),
+            self._analysis_params(),
+        )
+
+        self.assertEqual(response.status_code, 404)
+
     def test_novelties_requires_the_analysis_session(self):
         response = self.client.get(
             reverse("novelties_week", args=[self.week_start.isoformat()])
