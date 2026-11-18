@@ -961,6 +961,54 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertTrue(rows[0]["is_non_work"])
         self.assertEqual(rows[0]["worked"], 0)
 
+    def test_analysis_person_detail_marks_numeric_cells_for_selection(self):
+        self._insert_shift(self.person)
+        self._unlock_analysis()
+
+        response = self.client.get(
+            reverse("analysis_person_detail", args=[self.person.pk]),
+            self._analysis_params(),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-analysis-table")
+        self.assertContains(response, "data-analysis-status")
+        self.assertContains(response, "data-analysis-metrics")
+        self.assertContains(response, 'data-metric="sum"')
+        self.assertContains(response, "data-analysis-copy")
+        self.assertContains(response, 'data-value="7.00"')
+        self.assertContains(response, 'data-value="0.00"')
+
+    def test_analysis_person_detail_keeps_modal_regions(self):
+        self._insert_shift(self.person)
+        self._unlock_analysis()
+
+        response = self.client.get(
+            reverse("analysis_person_detail", args=[self.person.pk]),
+            self._analysis_params(),
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        for marker in (
+            'class="modal-header"',
+            'class="analysis-detail-summary"',
+            'class="analysis-detail-scroll"',
+            'class="analysis-detail-status"',
+        ):
+            self.assertIn(marker, body)
+        self.assertLess(
+            body.index("analysis-detail-summary"),
+            body.index("analysis-detail-scroll"),
+        )
+        self.assertLess(
+            body.index("analysis-detail-scroll"),
+            body.index("analysis-detail-status"),
+        )
+        self.assertNotIn("modal-actions", body)
+
     def test_analysis_person_detail_rejects_disabled_person(self):
         self.person.is_active = False
         self.person.save()

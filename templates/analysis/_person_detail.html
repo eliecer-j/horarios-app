@@ -15,7 +15,7 @@
     <span><strong class="{{ summary.nighttime|signed_class }}">{{ summary.nighttime|floatformat:2 }}</strong> h nocturnas</span>
   </div>
   <div class="analysis-detail-scroll">
-    <table class="data-table analysis-detail-table">
+    <table class="data-table analysis-detail-table" data-analysis-table>
       <caption class="sr-only">Detalle diario de {{ display_name }} del {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }}</caption>
       <thead>
         <tr>
@@ -37,10 +37,10 @@
           <td>{{ row.branch }}</td>
           <td>{{ row.start|default:"—" }}</td>
           <td>{{ row.end|default:"—" }}</td>
-          <td>{{ row.worked|floatformat:2 }}</td>
-          <td class="{{ row.overtime|signed_class }}">{{ row.overtime|floatformat:2 }}</td>
-          <td class="{{ row.daytime|signed_class }}">{{ row.daytime|floatformat:2 }}</td>
-          <td class="{{ row.nighttime|signed_class }}">{{ row.nighttime|floatformat:2 }}</td>
+          <td data-value="{{ row.worked|stringformat:'.2f' }}">{{ row.worked|floatformat:2 }}</td>
+          <td class="{{ row.overtime|signed_class }}" data-value="{{ row.overtime|stringformat:'.2f' }}">{{ row.overtime|floatformat:2 }}</td>
+          <td class="{{ row.daytime|signed_class }}" data-value="{{ row.daytime|stringformat:'.2f' }}">{{ row.daytime|floatformat:2 }}</td>
+          <td class="{{ row.nighttime|signed_class }}" data-value="{{ row.nighttime|stringformat:'.2f' }}">{{ row.nighttime|floatformat:2 }}</td>
           <td>{{ row.observation|default:"" }}</td>
         </tr>
       {% empty %}
@@ -49,7 +49,18 @@
       </tbody>
     </table>
   </div>
-  <div class="modal-actions">
-    <button type="button" class="button button-ghost" onclick="this.closest('dialog').close()">Cerrar</button>
+  <div class="analysis-detail-status" data-analysis-status aria-live="polite">
+    <p class="analysis-detail-hint" data-analysis-hint>Arrastra sobre las celdas para ver la suma. Shift + clic amplía la selección.</p>
+    <dl class="analysis-detail-metrics" data-analysis-metrics hidden>
+      <div><dt>Suma</dt><dd data-metric="sum">—</dd></div>
+      <div><dt>Promedio</dt><dd data-metric="avg">—</dd></div>
+      <div><dt>Mín</dt><dd data-metric="min">—</dd></div>
+      <div><dt>Máx</dt><dd data-metric="max">—</dd></div>
+      <div><dt>Celdas</dt><dd data-metric="count">0</dd></div>
+    </dl>
+    <div class="analysis-detail-status-actions" data-analysis-actions hidden>
+      <button type="button" class="button button-ghost" data-analysis-clear>Limpiar</button>
+      <button type="button" class="button button-ghost" data-analysis-copy>Copiar</button>
+    </div>
   </div>
 </dialog>
