@@ -91,7 +91,7 @@
       <table class="schedule-table">
         <caption class="sr-only">Grilla semanal de turnos: personas y días · {{ week_label }}</caption>
         <thead><tr><th scope="col" class="person-heading">Persona</th>
-          {% for day in days %}<th scope="col" class="{% if day.is_today %}today-heading{% endif %}">{{ day.label }}<span>{{ day.date|date:'d/m' }}</span></th>{% endfor %}
+          {% for day in days %}<th scope="col" class="{% if day.is_today %}today-heading{% endif %}"{% if day.is_today %} aria-current="date"{% endif %}>{{ day.label }}<span>{{ day.date|date:'d/m' }}</span></th>{% endfor %}
           <th scope="col" class="rest-count-column">Descansos</th>
         </tr></thead>
         <tbody>
@@ -99,7 +99,7 @@
           <tr>
             <th scope="row" class="person-name"><span class="avatar" aria-hidden="true">{{ row.person.name|slice:":1"|upper }}</span><span>{{ row.display_name|capitalize }}</span></th>
             {% for cell in row.cells %}
-              <td title="{{ row.display_name|capitalize }}">
+              <td title="{{ row.display_name|capitalize }}"{% if cell.day.is_today %} class="today-column"{% endif %}>
                 {% if cell.on_vacation %}
                   <span class="shift-cell vacation-cell">Vacaciones</span>
                 {% else %}

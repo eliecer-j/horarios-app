@@ -50,6 +50,20 @@ class LegacyDatabaseViewsTests(TestCase):
             response.content.index(b'class="rest-count-column">Descansos</th>'),
         )
 
+    def test_current_day_column_is_highlighted(self):
+        response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertContains(response, "today-column")
+        self.assertContains(response, 'aria-current="date"')
+
+        other_week = self.week_start + timedelta(weeks=1)
+        other_response = self.client.get(
+            reverse("schedule", args=[other_week.isoformat()])
+        )
+        self.assertNotContains(other_response, "today-column")
+        self.assertNotContains(other_response, 'aria-current="date"')
+
     def test_schedule_filters_rows_by_branch(self):
         other_person = Person.objects.create(name="Beto Ruiz")
         other_branch = Branch.objects.create(name="Norte", color="#EB5757")
