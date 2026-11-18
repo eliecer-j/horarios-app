@@ -5,7 +5,16 @@
       <p class="eyebrow">Detalle diario · {{ start_date|date:'d/m/Y' }} al {{ end_date|date:'d/m/Y' }}</p>
       <h2 id="analysis-detail-title">{{ display_name }}</h2>
     </div>
-    <button type="button" class="icon-button" onclick="this.closest('dialog').close()" aria-label="Cerrar">×</button>
+    <div class="modal-header-actions">
+      <button type="button" class="icon-button analysis-detail-refresh"
+        hx-get="{% url 'analysis_person_detail' person.pk %}?month={{ month_value }}&amp;fortnight={{ fortnight }}"
+        hx-target="closest dialog" hx-swap="outerHTML"
+        hx-disabled-elt="this"
+        aria-label="Refrescar detalle" title="Refrescar">
+        <span aria-hidden="true">↻</span>
+      </button>
+      <button type="button" class="icon-button" onclick="this.closest('dialog').close()" aria-label="Cerrar">×</button>
+    </div>
   </div>
   <div class="analysis-detail-summary">
     <span><strong>{{ summary.days }}</strong> días</span>

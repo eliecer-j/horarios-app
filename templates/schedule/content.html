@@ -111,6 +111,11 @@
                     hx-target="#page-content" hx-swap="innerHTML">
                     {% if cell.assignment %}
                       {% if cell.assignment.branch_id %}
+                        {% if not novelties_mode and cell.novelty %}
+                          <span class="novelty-dot novelty-dot-{{ cell.novelty.kind }}" role="img"
+                            aria-label="Novedad: {{ cell.novelty.kind_label }}"
+                            title="Novedad: {{ cell.novelty.kind_label }}{% if cell.novelty.actual_start_time %} · Llegada 1: {{ cell.novelty.actual_start_time }}{% endif %}{% if cell.novelty.actual_start_time_2 %} · Llegada 2: {{ cell.novelty.actual_start_time_2 }}{% endif %}{% if cell.novelty.observation %} · {{ cell.novelty.observation }}{% endif %}"></span>
+                        {% endif %}
                         {% if novelties_mode %}
                           <span class="novelty-shift-context">{{ cell.branch.name|default:"Sucursal eliminada" }} · {{ cell.assignment.start_time }}–{{ cell.assignment.end_time }}{% if cell.assignment.start_time_2 and cell.assignment.end_time_2 %} / {{ cell.assignment.start_time_2 }}–{{ cell.assignment.end_time_2 }}{% endif %}</span>
                           {% if cell.novelty %}

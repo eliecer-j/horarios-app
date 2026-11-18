@@ -149,7 +149,7 @@ button, input, select { font: inherit; }
 .avatar-large { width: 40px; height: 40px; flex: 0 0 40px; font-size: 17px; }
 .today-heading { color: hsl(var(--primary)) !important; font-weight: 900 !important; font-size: 13px !important; font-style: italic !important; }
 .schedule-table thead th.today-heading { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)) !important; }
-.shift-cell { min-width: 102px; min-height: 53px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; border: 1px solid transparent; border-radius: 8px; font-size: 11px; }
+.shift-cell { position: relative; min-width: 102px; min-height: 53px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; border: 1px solid transparent; border-radius: 8px; font-size: 11px; }
 .shift-cell strong { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shift-cell > span:not(.add-mark) { color: hsl(var(--muted)); }
 .novelty-badge { padding: 1px 6px; border-radius: 999px; background: hsl(var(--primary) / .12); color: hsl(var(--primary)) !important; font-size: 10px; font-weight: 700; }
@@ -159,6 +159,11 @@ button, input, select { font: inherit; }
 .novelty-badge-historical { background: hsl(var(--muted) / .14); color: hsl(var(--muted)) !important; }
 .novelty-history-date { color: hsl(var(--muted)); font-size: 9px; }
 .novelty-history-delete { min-height: 24px; padding: 2px 6px; font-size: 9px; }
+.novelty-dot { position: absolute; top: 5px; right: 5px; width: 8px; height: 8px; border-radius: 999px; box-shadow: 0 0 0 2px hsl(var(--card)); }
+.novelty-dot-late_arrival { background: hsl(var(--primary)); }
+.novelty-dot-did_not_attend { background: hsl(var(--danger)); }
+.novelty-dot-calamity { background: #f59e0b; }
+.dark .novelty-dot-calamity { background: #fbbf24; }
 .assigned-cell { border-color: color-mix(in srgb, var(--branch-color) 30%, transparent); background: color-mix(in srgb, var(--branch-color) 13%, transparent); }
 .assigned-cell strong { color: var(--branch-color); }
 .rest-cell { background: hsl(var(--muted) / .1); border-color: hsl(var(--border)); }
@@ -179,6 +184,9 @@ button, input, select { font: inherit; }
 .modal-wide .modal-header .eyebrow { margin: 0 0 4px; color: hsl(var(--muted)); font-size: 11px; font-weight: 600; letter-spacing: .08em; }
 .modal-wide .modal-header h2 { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
 .modal-wide .modal-header .icon-button { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 9px; }
+.modal-header-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.modal-wide .modal-header > div:first-child { min-width: 0; }
+.modal-wide .modal-header h2 { overflow-wrap: anywhere; }
 .modal-wide .analysis-detail-summary { gap: 0; margin: 0 0 14px; font-size: 13px; }
 .modal::backdrop { background: hsl(222 30% 5% / .48); }
 .modal-wide::backdrop { background: hsl(222 30% 5% / .72); }
@@ -280,6 +288,9 @@ button, input, select { font: inherit; }
 .analysis-detail-status-actions .button { min-height: 30px; padding: 0 12px; font-size: 12px; }
 .analysis-detail-metrics[hidden], .analysis-detail-hint[hidden], .analysis-detail-status-actions[hidden] { display: none; }
 .analysis-detail-clipboard { position: fixed; top: -1000px; left: 0; opacity: 0; }
+.analysis-detail-refresh span { display: block; line-height: 1; }
+.icon-button.htmx-request span { animation: analysis-spin .7s linear infinite; }
+@keyframes analysis-spin { to { transform: rotate(360deg); } }
 @media (max-height: 720px) {
   .modal-wide { --analysis-row-height: 25px; padding: 16px 20px 12px; }
   .modal-wide .modal-header { margin-bottom: 8px; }
@@ -291,6 +302,7 @@ button, input, select { font: inherit; }
 }
 @media (prefers-reduced-motion: reduce) {
   .analysis-detail-table tbody td:hover, .analysis-detail-table tbody th:hover { transition: none; }
+  .icon-button.htmx-request span { animation: none; }
 }
 .legend-swatch { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 999px; }
 .legend-negative { background: hsl(var(--danger)); }

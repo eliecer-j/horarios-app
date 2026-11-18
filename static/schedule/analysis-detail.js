@@ -11,6 +11,7 @@
   let dragging = false;
   let dragPoint = null;
   let scrollFrame = null;
+  let pendingScroll = null;
 
   function activeDialog() {
     const dialog = document.getElementById("analysis-detail-dialog");
@@ -406,6 +407,33 @@
     true
   );
 
+  function rememberRefreshScroll(event) {
+    const source = event.detail && event.detail.elt;
+    if (!source || !source.closest || !source.closest(".analysis-detail-refresh")) {
+      return;
+    }
+    const container = document.querySelector(
+      "#analysis-detail-dialog .analysis-detail-scroll"
+    );
+    pendingScroll = container
+      ? { top: container.scrollTop, left: container.scrollLeft }
+      : null;
+  }
+
+  function restoreRefreshScroll() {
+    if (!pendingScroll) return;
+    const container = document.querySelector(
+      "#analysis-detail-dialog .analysis-detail-scroll"
+    );
+    if (container) {
+      container.scrollTop = pendingScroll.top;
+      container.scrollLeft = pendingScroll.left;
+    }
+    pendingScroll = null;
+  }
+
+  document.body.addEventListener("htmx:beforeRequest", rememberRefreshScroll);
+  document.body.addEventListener("htmx:afterSettle", restoreRefreshScroll);
   document.body.addEventListener("htmx:beforeSwap", resetSelection);
   document.body.addEventListener("htmx:afterSettle", resetSelection);
 })();

@@ -39,6 +39,7 @@ def week_novelties(week_start):
     return {
         (novelty.person_id, novelty.day): {
             "kind": novelty.kind,
+            "kind_label": novelty.get_kind_display(),
             "actual_start_time": (
                 novelty.actual_start_time.strftime("%H:%M")
                 if novelty.actual_start_time else ""

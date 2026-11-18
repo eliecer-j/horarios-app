@@ -1008,6 +1008,14 @@ class LegacyDatabaseViewsTests(TestCase):
             body.index("analysis-detail-status"),
         )
         self.assertNotIn("modal-actions", body)
+        self.assertContains(response, 'aria-label="Refrescar detalle"')
+        self.assertContains(response, 'hx-target="closest dialog"')
+        detail_url = reverse("analysis_person_detail", args=[self.person.pk])
+        params = self._analysis_params()
+        self.assertContains(
+            response,
+            f'{detail_url}?month={params["month"]}&amp;fortnight={params["fortnight"]}',
+        )
 
     def test_analysis_person_detail_rejects_disabled_person(self):
         self.person.is_active = False
@@ -1601,6 +1609,46 @@ class LegacyDatabaseViewsTests(TestCase):
             {"edit": f"{self.person.pk}-1"},
         )
         self.assertNotContains(normal_novelty_page, 'name="actual_start_time_2"')
+
+    def test_schedule_cell_marks_active_novelty_with_a_dot(self):
+        self._insert_shift(self.person)
+        self._unlock_analysis()
+        self.client.post(
+            reverse(
+                "novelty_save",
+                args=[self.week_start.isoformat(), self.person.pk, 0],
+            ),
+            {
+                "kind": AssignmentNovelty.LATE_ARRIVAL,
+                "actual_start_time": "08:30",
+                "observation": "Sin aviso",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "novelty-dot novelty-dot-late_arrival")
+        self.assertContains(response, 'aria-label="Novedad: Llegada tarde"')
+        self.assertContains(response, "Llegada 1: 08:30")
+
+        novelties_response = self.client.get(
+            reverse("novelties_week", args=[self.week_start.isoformat()])
+        )
+        self.assertNotContains(novelties_response, "novelty-dot")
+
+    def test_schedule_cell_without_novelty_has_no_dot(self):
+        self._insert_shift(self.person)
+
+        response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "novelty-dot")
 
     def test_schedule_export_downloads_excel(self):
         response = self.client.get(

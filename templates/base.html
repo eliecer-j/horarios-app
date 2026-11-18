@@ -88,6 +88,13 @@
     let preservedPageScroll = 0;
     let preservedScheduleScrollTop = 0;
     let preservedScheduleScroll = 0;
+    function openPendingDialogs() {
+      const dialog = document.getElementById("assignment-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+      const analysisDialog = document.getElementById("analysis-detail-dialog");
+      if (analysisDialog && !analysisDialog.open) analysisDialog.showModal();
+    }
+    document.body.addEventListener("htmx:afterSwap", openPendingDialogs);
     document.body.addEventListener("htmx:beforeRequest", function (event) {
       if (event.detail.target && event.detail.target.id === "page-content") {
         preservedPageScroll = window.scrollY;
@@ -100,10 +107,7 @@
       updateActiveNavigation();
       updateNoveltyFields();
       updateSplitShiftFields();
-      const dialog = document.getElementById("assignment-dialog");
-      if (dialog && !dialog.open) dialog.showModal();
-      const analysisDialog = document.getElementById("analysis-detail-dialog");
-      if (analysisDialog && !analysisDialog.open) analysisDialog.showModal();
+      openPendingDialogs();
       const personForm = document.getElementById("person-form-card");
       if (personForm) {
         personForm.scrollIntoView({block: "start", behavior: "instant"});
@@ -120,10 +124,7 @@
       updateActiveNavigation();
       updateNoveltyFields();
       updateSplitShiftFields();
-      const dialog = document.getElementById("assignment-dialog");
-      if (dialog && !dialog.open) dialog.showModal();
-      const analysisDialog = document.getElementById("analysis-detail-dialog");
-      if (analysisDialog && !analysisDialog.open) analysisDialog.showModal();
+      openPendingDialogs();
       const personForm = document.getElementById("person-form-card");
       if (personForm) personForm.scrollIntoView({block: "start", behavior: "instant"});
     });
