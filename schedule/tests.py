@@ -1811,6 +1811,63 @@ class LegacyDatabaseViewsTests(TestCase):
         daily_metrics = assignment_period_metrics([self.person], assignments)
         self.assertEqual(daily_metrics[0]["worked"], 4 * 60)
 
+    def test_late_arrival_deducts_daytime_and_preserves_night_overtime(self):
+        week_start = date(2026, 11, 9)
+        assignments = [
+            (
+                week_start,
+                self.person.pk,
+                self.branch.pk,
+                "11:00",
+                "20:00",
+                "11:11",
+                AssignmentNovelty.LATE_ARRIVAL,
+                "",
+            ),
+            (
+                week_start + timedelta(days=1),
+                self.person.pk,
+                self.branch.pk,
+                "11:00",
+                "20:00",
+                None,
+                None,
+                "",
+            ),
+        ]
+
+        daily_metrics = assignment_period_metrics([self.person], assignments)
+
+        self.assertEqual(daily_metrics[0]["worked"], 469)
+        self.assertEqual(daily_metrics[0]["overtime"], 49)
+        self.assertEqual(daily_metrics[0]["daytime"], -11)
+        self.assertEqual(daily_metrics[0]["nighttime"], 60)
+        self.assertEqual(daily_metrics[1]["daytime"], 0)
+        self.assertEqual(daily_metrics[1]["nighttime"], 60)
+
+    def test_late_arrival_preserves_night_overtime_on_split_shift(self):
+        assignments = [(
+            date(2026, 11, 9),
+            self.person.pk,
+            self.branch.pk,
+            "09:00",
+            "13:00",
+            "09:00",
+            AssignmentNovelty.LATE_ARRIVAL,
+            "",
+            "split_shift",
+            "18:00",
+            "23:00",
+            "18:30",
+        )]
+
+        daily_metrics = assignment_period_metrics([self.person], assignments)
+
+        self.assertEqual(daily_metrics[0]["worked"], 510)
+        self.assertEqual(daily_metrics[0]["overtime"], 90)
+        self.assertEqual(daily_metrics[0]["daytime"], -30)
+        self.assertEqual(daily_metrics[0]["nighttime"], 120)
+
     def test_analysis_preserves_negative_daytime_balance_and_nighttime_overtime(self):
         week_start = date(2026, 10, 5)
         shift_data = (

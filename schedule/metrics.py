@@ -82,6 +82,34 @@ def shift_segments_metrics(segments, lunch_minutes=0):
     )
 
 
+def _night_overtime_minutes(segments, actual_starts, lunch_minutes=0):
+    """Minutos nocturnos extra realmente trabajados.
+
+    La jornada regular se ancla al horario planificado, no a la llegada real:
+    un atraso descuenta horas diurnas y no convierte la noche en jornada regular.
+    """
+    regular_minutes_remaining = REGULAR_DAY_MINUTES + lunch_minutes
+    night_minutes = 0
+    for (start_time, end_time), actual_start in zip(segments, actual_starts):
+        start = _minutes_from_time(start_time)
+        end = _minutes_from_time(end_time)
+        duration = (end - start) % (24 * 60)
+        if duration == 0:
+            duration = 24 * 60
+        overtime_start = min(regular_minutes_remaining, duration)
+        arrival_offset = (_minutes_from_time(actual_start) - start) % (24 * 60)
+        for offset in range(max(overtime_start, arrival_offset), duration):
+            clock_minute = (start + offset) % (24 * 60)
+            if not (
+                DAY_SHIFT_START_HOUR * 60
+                <= clock_minute
+                < DAY_SHIFT_END_HOUR * 60
+            ):
+                night_minutes += 1
+        regular_minutes_remaining = max(0, regular_minutes_remaining - duration)
+    return night_minutes
+
+
 def assignment_period_metrics(people, assignments):
     person_rows = {}
     for index, assignment in enumerate(assignments):
@@ -99,23 +127,45 @@ def assignment_period_metrics(people, assignments):
         is_split_shift = (
             assignment_type == "split_shift" and start_time_2 and end_time_2
         )
+        shift_is_long_enough = (
+            _shift_duration(start_time, end_time) >= LUNCH_MINIMUM_SHIFT_MINUTES
+        )
         lunch_minutes = 0
         if (
             not is_split_shift
-            and _shift_duration(start_time, end_time) >= LUNCH_MINIMUM_SHIFT_MINUTES
+            and shift_is_long_enough
             and shift_touches_lunch(actual_start_time or start_time, end_time)
         ):
             lunch_minutes = LUNCH_MINUTES
+        scheduled_lunch_minutes = 0
+        if (
+            not is_split_shift
+            and shift_is_long_enough
+            and shift_touches_lunch(start_time, end_time)
+        ):
+            scheduled_lunch_minutes = LUNCH_MINUTES
         segments = [(actual_start_time or start_time, end_time)]
+        scheduled_segments = [(start_time, end_time)]
         if is_split_shift:
             segments.append((actual_start_time_2 or start_time_2, end_time_2))
+            scheduled_segments.append((start_time_2, end_time_2))
         metrics = shift_segments_metrics(segments, lunch_minutes=lunch_minutes)
+        worked_minutes = round(metrics[0] * 60)
+        overtime_minutes = worked_minutes - REGULAR_DAY_MINUTES
+        night_minutes = min(
+            _night_overtime_minutes(
+                scheduled_segments,
+                [segment[0] for segment in segments],
+                scheduled_lunch_minutes,
+            ),
+            max(0, worked_minutes),
+        )
         person_rows.setdefault(person_id, []).append({
             "index": index,
-            "worked": round(metrics[0] * 60),
-            "daytime_gross": round(metrics[2] * 60),
-            "nighttime_gross": round(metrics[3] * 60),
-            "daytime_shortfall": max(0, REGULAR_DAY_MINUTES - round(metrics[0] * 60)),
+            "worked": worked_minutes,
+            "overtime": overtime_minutes,
+            "daytime": overtime_minutes - night_minutes,
+            "nighttime": night_minutes,
         })
 
     daily_metrics = {}
@@ -124,13 +174,11 @@ def assignment_period_metrics(people, assignments):
         if person_id not in people_by_id:
             continue
         for row in rows:
-            daytime = row["daytime_gross"] - row["daytime_shortfall"]
-            nighttime = row["nighttime_gross"]
             daily_metrics[row["index"]] = {
                 "worked": row["worked"],
-                "overtime": daytime + nighttime,
-                "daytime": daytime,
-                "nighttime": nighttime,
+                "overtime": row["overtime"],
+                "daytime": row["daytime"],
+                "nighttime": row["nighttime"],
             }
     return daily_metrics
 
