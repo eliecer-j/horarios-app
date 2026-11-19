@@ -94,26 +94,11 @@
       const analysisDialog = document.getElementById("analysis-detail-dialog");
       if (analysisDialog && !analysisDialog.open) analysisDialog.showModal();
     }
-    document.body.addEventListener("htmx:afterSwap", openPendingDialogs);
     function isPageSwap(event) {
-      return Boolean(
-        event.detail && event.detail.elt && event.detail.elt.id === "page-content"
-      );
+      const target = event.detail && event.detail.target;
+      return Boolean(target && target.id === "page-content");
     }
-    document.body.addEventListener("htmx:beforeRequest", function (event) {
-      if (event.detail.target && event.detail.target.id === "page-content") {
-        preservedPageScroll = window.scrollY;
-        const schedule = document.querySelector(".schedule-wrap");
-        preservedScheduleScrollTop = schedule?.scrollTop || 0;
-        preservedScheduleScroll = schedule?.scrollLeft || 0;
-      }
-    });
-    document.body.addEventListener("htmx:afterSettle", function (event) {
-      updateActiveNavigation();
-      updateNoveltyFields();
-      updateSplitShiftFields();
-      openPendingDialogs();
-      if (!isPageSwap(event)) return;
+    function restorePreservedScroll() {
       const personForm = document.getElementById("person-form-card");
       if (personForm) {
         personForm.scrollIntoView({block: "start", behavior: "instant"});
@@ -125,6 +110,26 @@
         schedule.scrollTop = preservedScheduleScrollTop;
         schedule.scrollLeft = preservedScheduleScroll;
       }
+    }
+    document.body.addEventListener("htmx:beforeRequest", function (event) {
+      if (event.detail.target && event.detail.target.id === "page-content") {
+        preservedPageScroll = window.scrollY;
+        const schedule = document.querySelector(".schedule-wrap");
+        preservedScheduleScrollTop = schedule?.scrollTop || 0;
+        preservedScheduleScroll = schedule?.scrollLeft || 0;
+      }
+    });
+    document.body.addEventListener("htmx:afterSwap", function (event) {
+      // Restaurar antes de pintar evita el salto visible al abrir o cerrar el formulario.
+      if (isPageSwap(event)) restorePreservedScroll();
+      openPendingDialogs();
+    });
+    document.body.addEventListener("htmx:afterSettle", function (event) {
+      updateActiveNavigation();
+      updateNoveltyFields();
+      updateSplitShiftFields();
+      openPendingDialogs();
+      if (isPageSwap(event)) restorePreservedScroll();
     });
     document.addEventListener("DOMContentLoaded", function () {
       updateActiveNavigation();
