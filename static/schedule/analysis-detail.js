@@ -263,13 +263,18 @@
     return lines.join("\n");
   }
 
-  function legacyCopy(text) {
+  function textareaCopy(text) {
+    const dialog = document.querySelector("dialog[open]");
     const area = document.createElement("textarea");
     area.value = text;
     area.setAttribute("readonly", "");
     area.className = "analysis-detail-clipboard";
-    document.body.appendChild(area);
+    // En un <dialog> modal el resto del documento queda inerte: el textarea
+    // debe vivir dentro del diálogo para que el copiado funcione por HTTP.
+    (dialog || document.body).appendChild(area);
+    area.focus();
     area.select();
+    area.setSelectionRange(0, area.value.length);
     let copied = false;
     try {
       copied = document.execCommand("copy");
@@ -280,16 +285,39 @@
     return copied;
   }
 
+  function legacyCopy(text) {
+    let copied = false;
+    function onCopy(event) {
+      if (!event.clipboardData) return;
+      event.clipboardData.setData("text/plain", text);
+      event.preventDefault();
+      copied = true;
+    }
+    document.addEventListener("copy", onCopy, true);
+    try {
+      document.execCommand("copy");
+    } catch (error) {
+      copied = false;
+    } finally {
+      document.removeEventListener("copy", onCopy, true);
+    }
+    return copied || textareaCopy(text);
+  }
+
   function copyText(text) {
     if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text).then(
-        function () {
-          return true;
-        },
-        function () {
-          return legacyCopy(text);
-        }
-      );
+      try {
+        return navigator.clipboard.writeText(text).then(
+          function () {
+            return true;
+          },
+          function () {
+            return legacyCopy(text);
+          }
+        );
+      } catch (error) {
+        return Promise.resolve(legacyCopy(text));
+      }
     }
     return Promise.resolve(legacyCopy(text));
   }
