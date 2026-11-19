@@ -95,6 +95,11 @@
       if (analysisDialog && !analysisDialog.open) analysisDialog.showModal();
     }
     document.body.addEventListener("htmx:afterSwap", openPendingDialogs);
+    function isPageSwap(event) {
+      return Boolean(
+        event.detail && event.detail.elt && event.detail.elt.id === "page-content"
+      );
+    }
     document.body.addEventListener("htmx:beforeRequest", function (event) {
       if (event.detail.target && event.detail.target.id === "page-content") {
         preservedPageScroll = window.scrollY;
@@ -103,11 +108,12 @@
         preservedScheduleScroll = schedule?.scrollLeft || 0;
       }
     });
-    document.body.addEventListener("htmx:afterSettle", function () {
+    document.body.addEventListener("htmx:afterSettle", function (event) {
       updateActiveNavigation();
       updateNoveltyFields();
       updateSplitShiftFields();
       openPendingDialogs();
+      if (!isPageSwap(event)) return;
       const personForm = document.getElementById("person-form-card");
       if (personForm) {
         personForm.scrollIntoView({block: "start", behavior: "instant"});
