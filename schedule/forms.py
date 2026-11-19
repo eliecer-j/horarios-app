@@ -9,6 +9,30 @@ BRANCH_PALETTE = (
     "#7FA81B", "#DB4F8E", "#5865F2", "#D9772B", "#3E9B8F", "#A16B4A",
 )
 
+TIME_PATTERN = r"(?:[01]\d|2[0-3])[:.,][0-5]\d"
+TIME_ERROR = "Usa formato HH:MM."
+
+
+def normalize_time(value):
+    """Acepta 12.30, 12,30, 12:30, 930 o 1230 y devuelve HH:MM."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    value = value.replace(".", ":").replace(",", ":")
+    separated = re.fullmatch(r"(\d{1,2}):(\d{1,2})", value)
+    if separated:
+        hour = int(separated.group(1))
+        minute = separated.group(2)
+        minute = minute if len(minute) == 2 else f"{minute}0"
+        return f"{hour:02d}:{minute}"
+    digits = re.fullmatch(r"\d{3,4}", value)
+    if digits:
+        raw = digits.group(0)
+        if len(raw) == 3:
+            return f"0{raw[0]}:{raw[1:]}"
+        return f"{raw[:2]}:{raw[2:]}"
+    return value
+
 
 class PersonForm(forms.Form):
     name = forms.CharField(max_length=200, label="Nombre completo")
@@ -118,7 +142,8 @@ class AssignmentForm(forms.Form):
             "placeholder": "12:00",
             "maxlength": "5",
             "inputmode": "numeric",
-            "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+            "pattern": TIME_PATTERN,
+            "data-time-input": "",
             "title": "Usa el formato de 24 horas HH:MM, por ejemplo 12:00.",
             "autocomplete": "off",
         }),
@@ -130,7 +155,8 @@ class AssignmentForm(forms.Form):
             "placeholder": "17:00",
             "maxlength": "5",
             "inputmode": "numeric",
-            "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+            "pattern": TIME_PATTERN,
+            "data-time-input": "",
             "title": "Usa el formato de 24 horas HH:MM, por ejemplo 17:00.",
             "autocomplete": "off",
         }),
@@ -142,7 +168,8 @@ class AssignmentForm(forms.Form):
             "placeholder": "17:00",
             "maxlength": "5",
             "inputmode": "numeric",
-            "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+            "pattern": TIME_PATTERN,
+            "data-time-input": "",
             "title": "Usa el formato de 24 horas HH:MM, por ejemplo 17:00.",
             "autocomplete": "off",
         }),
@@ -154,7 +181,8 @@ class AssignmentForm(forms.Form):
             "placeholder": "18:30",
             "maxlength": "5",
             "inputmode": "numeric",
-            "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+            "pattern": TIME_PATTERN,
+            "data-time-input": "",
             "title": "Usa el formato de 24 horas HH:MM, por ejemplo 18:30.",
             "autocomplete": "off",
         }),
@@ -168,27 +196,27 @@ class AssignmentForm(forms.Form):
             field.widget.attrs["class"] = "form-control"
 
     def clean_start_time(self):
-        value = self.cleaned_data.get("start_time", "").strip()
-        if value and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-            raise forms.ValidationError("Usa formato HH:MM.")
+        value = normalize_time(self.cleaned_data.get("start_time", ""))
+        if value and not re.fullmatch(TIME_PATTERN, value):
+            raise forms.ValidationError(TIME_ERROR)
         return value
 
     def clean_end_time(self):
-        value = self.cleaned_data.get("end_time", "").strip()
-        if value and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-            raise forms.ValidationError("Usa formato HH:MM.")
+        value = normalize_time(self.cleaned_data.get("end_time", ""))
+        if value and not re.fullmatch(TIME_PATTERN, value):
+            raise forms.ValidationError(TIME_ERROR)
         return value
 
     def clean_start_time_2(self):
-        value = self.cleaned_data.get("start_time_2", "").strip()
-        if value and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-            raise forms.ValidationError("Usa formato HH:MM.")
+        value = normalize_time(self.cleaned_data.get("start_time_2", ""))
+        if value and not re.fullmatch(TIME_PATTERN, value):
+            raise forms.ValidationError(TIME_ERROR)
         return value
 
     def clean_end_time_2(self):
-        value = self.cleaned_data.get("end_time_2", "").strip()
-        if value and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value):
-            raise forms.ValidationError("Usa formato HH:MM.")
+        value = normalize_time(self.cleaned_data.get("end_time_2", ""))
+        if value and not re.fullmatch(TIME_PATTERN, value):
+            raise forms.ValidationError(TIME_ERROR)
         return value
 
     def clean(self):
@@ -254,14 +282,15 @@ class LateArrivalForm(forms.Form):
     actual_start_time = forms.TimeField(
         required=False,
         label="Llegada real 1",
-        input_formats=["%H:%M"],
+        input_formats=["%H:%M", "%H.%M", "%H,%M", "%H%M"],
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",
                 "placeholder": "00:00",
                 "maxlength": "5",
                 "inputmode": "numeric",
-                "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+                "pattern": TIME_PATTERN,
+                "data-time-input": "",
                 "title": "Usa el formato de 24 horas HH:MM, por ejemplo 09:30.",
                 "autocomplete": "off",
                 "data-novelty-late-field": "",
@@ -271,14 +300,15 @@ class LateArrivalForm(forms.Form):
     actual_start_time_2 = forms.TimeField(
         required=False,
         label="Llegada real 2",
-        input_formats=["%H:%M"],
+        input_formats=["%H:%M", "%H.%M", "%H,%M", "%H%M"],
         widget=forms.TextInput(
             attrs={
                 "class": "form-control",
                 "placeholder": "00:00",
                 "maxlength": "5",
                 "inputmode": "numeric",
-                "pattern": r"(?:[01]\d|2[0-3]):[0-5]\d",
+                "pattern": TIME_PATTERN,
+                "data-time-input": "",
                 "title": "Usa el formato de 24 horas HH:MM, por ejemplo 17:15.",
                 "autocomplete": "off",
                 "data-novelty-late-field": "",
@@ -331,10 +361,10 @@ class LateArrivalForm(forms.Form):
     def _clean_actual_time(self, field_name, start_time, end_time, required):
         if self.cleaned_data.get("kind") != AssignmentNovelty.LATE_ARRIVAL:
             return None
-        raw_value = self.data.get(field_name, "").strip()
+        raw_value = normalize_time(self.data.get(field_name, ""))
         if not raw_value and not required:
             return None
-        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", raw_value):
+        if not re.fullmatch(TIME_PATTERN, raw_value):
             raise forms.ValidationError("Usa formato HH:MM, por ejemplo 09:30.")
         actual_time = self.cleaned_data[field_name]
         start_minutes = int(start_time[:2]) * 60 + int(start_time[3:])

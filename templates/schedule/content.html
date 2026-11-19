@@ -207,7 +207,7 @@
               {% endfor %}
             </div>
             <p class="form-hint">En un turno partido, completa Entrada 1, Salida 1, Entrada 2 y Salida 2. El tiempo entre las dos salidas y entradas no se cuenta como trabajado.</p>
-            <p class="form-hint">Formato de 24 horas HH:MM; por ejemplo 12:00–17:00. También puedes indicar un turno nocturno, como 22:00–06:00.</p>
+            <p class="form-hint">Formato de 24 horas HH:MM; por ejemplo 12:00–17:00. También puedes escribir 12.30 y se convertirá en 12:30. Los turnos nocturnos se indican como 22:00–06:00.</p>
             <div class="modal-actions"><a class="button button-ghost" href="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-get="{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch={{ branch_filter }}" hx-target="#page-content">Cancelar</a><button class="button button-primary" type="submit">Guardar turno</button></div>
           </form>
         {% endif %}

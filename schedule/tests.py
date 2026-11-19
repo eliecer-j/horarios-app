@@ -735,23 +735,38 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, 'placeholder="17:00"', html=False)
         self.assertContains(response, "data-split-shift-field hidden", html=False)
 
-    def test_assignment_form_accepts_only_24_hour_hhmm(self):
-        valid_form = AssignmentForm(data={
-            "status": "work",
-            "branch": self.branch.pk,
-            "start_time": "12:00",
-            "end_time": "17:00",
-        })
-        self.assertTrue(valid_form.is_valid())
+    def test_assignment_form_accepts_dots_and_normalizes_hours(self):
+        for raw_value in ("12:00", "12.00", "12,00", "1200"):
+            with self.subTest(raw_value=raw_value):
+                form = AssignmentForm(data={
+                    "status": "work",
+                    "branch": self.branch.pk,
+                    "start_time": raw_value,
+                    "end_time": "17:00",
+                })
+                self.assertTrue(form.is_valid(), form.errors)
+                self.assertEqual(form.cleaned_data["start_time"], "12:00")
 
-        invalid_form = AssignmentForm(data={
+        single_digit_hour = AssignmentForm(data={
             "status": "work",
             "branch": self.branch.pk,
-            "start_time": "1:00",
-            "end_time": "17:00",
+            "start_time": "9.30",
+            "end_time": "17.00",
         })
-        self.assertFalse(invalid_form.is_valid())
-        self.assertIn("Usa formato HH:MM.", invalid_form.errors["start_time"])
+        self.assertTrue(single_digit_hour.is_valid(), single_digit_hour.errors)
+        self.assertEqual(single_digit_hour.cleaned_data["start_time"], "09:30")
+        self.assertEqual(single_digit_hour.cleaned_data["end_time"], "17:00")
+
+        for raw_value in ("25:00", "12:60", "abc"):
+            with self.subTest(raw_value=raw_value):
+                invalid_form = AssignmentForm(data={
+                    "status": "work",
+                    "branch": self.branch.pk,
+                    "start_time": raw_value,
+                    "end_time": "17:00",
+                })
+                self.assertFalse(invalid_form.is_valid())
+                self.assertIn("Usa formato HH:MM.", invalid_form.errors["start_time"])
 
     def test_split_shift_form_requires_two_ordered_time_ranges(self):
         form = AssignmentForm(data={
@@ -1112,7 +1127,8 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(page, 'data-novelty-kind-select', html=False)
         self.assertContains(page, 'type="text"', html=False)
         self.assertContains(page, 'placeholder="00:00"', html=False)
-        self.assertContains(page, 'pattern="(?:[01]\\d|2[0-3]):[0-5]\\d"', html=False)
+        self.assertContains(page, 'pattern="(?:[01]\\d|2[0-3])[:.,][0-5]\\d"', html=False)
+        self.assertContains(page, 'data-time-input', html=False)
         self.assertContains(page, "Observación (opcional)")
 
         response = self.client.post(
@@ -1477,16 +1493,23 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         self.assertTrue(no_attendance_form.is_valid(), no_attendance_form.errors)
 
+        dotted_format_form = LateArrivalForm(
+            data={"kind": AssignmentNovelty.LATE_ARRIVAL, "actual_start_time": "9.30"},
+            start_time="08:00",
+            end_time="16:00",
+        )
+        self.assertTrue(dotted_format_form.is_valid(), dotted_format_form.errors)
+        self.assertEqual(
+            dotted_format_form.cleaned_data["actual_start_time"].strftime("%H:%M"),
+            "09:30",
+        )
+
         invalid_format_form = LateArrivalForm(
-            data={"kind": AssignmentNovelty.LATE_ARRIVAL, "actual_start_time": "9:30"},
+            data={"kind": AssignmentNovelty.LATE_ARRIVAL, "actual_start_time": "25.00"},
             start_time="08:00",
             end_time="16:00",
         )
         self.assertFalse(invalid_format_form.is_valid())
-        self.assertEqual(
-            invalid_format_form.errors["actual_start_time"],
-            ["Usa formato HH:MM, por ejemplo 09:30."],
-        )
 
         form = LateArrivalForm(
             data={"kind": AssignmentNovelty.LATE_ARRIVAL, "actual_start_time": "07:30"},
