@@ -121,27 +121,29 @@
       }
     });
     document.body.addEventListener("htmx:afterSwap", function (event) {
-      // Restaurar antes de pintar evita el salto visible al abrir o cerrar el formulario.
+      // Aplicar el filtro antes de pintar evita el salto al abrir o cerrar el formulario.
+      prepareScheduleContent();
       if (isPageSwap(event)) restorePreservedScroll();
       openPendingDialogs();
     });
     document.body.addEventListener("htmx:afterSettle", function (event) {
       updateActiveNavigation();
-      updateNoveltyFields();
-      updateSplitShiftFields();
-      restoreGridSearch();
+      prepareScheduleContent();
       openPendingDialogs();
       if (isPageSwap(event)) restorePreservedScroll();
     });
     document.addEventListener("DOMContentLoaded", function () {
       updateActiveNavigation();
-      updateNoveltyFields();
-      updateSplitShiftFields();
-      restoreGridSearch();
+      prepareScheduleContent();
       openPendingDialogs();
       const personForm = document.getElementById("person-form-card");
       if (personForm) personForm.scrollIntoView({block: "start", behavior: "instant"});
     });
+    function prepareScheduleContent() {
+      updateNoveltyFields();
+      updateSplitShiftFields();
+      restoreGridSearch();
+    }
     function updateNoveltyFields() {
       const kind = document.querySelector("[data-novelty-kind-select]");
       if (!kind) return;
