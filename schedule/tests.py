@@ -735,6 +735,23 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(response, 'placeholder="17:00"', html=False)
         self.assertContains(response, "data-split-shift-field hidden", html=False)
 
+    def test_grid_has_person_search_in_shifts_and_novelties(self):
+        schedule_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertEqual(schedule_response.status_code, 200)
+        self.assertContains(schedule_response, "data-grid-search", html=False)
+        self.assertContains(schedule_response, "data-person-search", html=False)
+        self.assertContains(schedule_response, "Buscar persona")
+
+        self._unlock_analysis()
+        novelties_response = self.client.get(
+            reverse("novelties_week", args=[self.week_start.isoformat()])
+        )
+        self.assertEqual(novelties_response.status_code, 200)
+        self.assertContains(novelties_response, "data-grid-search", html=False)
+        self.assertContains(novelties_response, "data-person-search", html=False)
+
     def test_assignment_form_accepts_dots_and_normalizes_hours(self):
         for raw_value in ("12:00", "12.00", "12,00", "1200"):
             with self.subTest(raw_value=raw_value):

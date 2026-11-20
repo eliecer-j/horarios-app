@@ -129,6 +129,7 @@
       updateActiveNavigation();
       updateNoveltyFields();
       updateSplitShiftFields();
+      restoreGridSearch();
       openPendingDialogs();
       if (isPageSwap(event)) restorePreservedScroll();
     });
@@ -136,6 +137,7 @@
       updateActiveNavigation();
       updateNoveltyFields();
       updateSplitShiftFields();
+      restoreGridSearch();
       openPendingDialogs();
       const personForm = document.getElementById("person-form-card");
       if (personForm) personForm.scrollIntoView({block: "start", behavior: "instant"});
@@ -179,6 +181,106 @@
         group.hidden = status.value !== "split_shift";
       });
     }
+    const GRID_SEARCH_KEY = "turnos-grid-search";
+    function normalizeSearchText(value) {
+      return String(value || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+    }
+    function saveGridSearch(value) {
+      try {
+        if (value) sessionStorage.setItem(GRID_SEARCH_KEY, value);
+        else sessionStorage.removeItem(GRID_SEARCH_KEY);
+      } catch (error) {
+        // Sin sessionStorage disponible: el filtro sigue funcionando en la página.
+      }
+    }
+    function applyGridSearch(rawQuery) {
+      const input = document.querySelector("[data-grid-search]");
+      const table = document.querySelector(".schedule-table");
+      if (!input || !table) return;
+      const raw = typeof rawQuery === "string" ? rawQuery : input.value;
+      if (input.value !== raw) input.value = raw;
+      const term = normalizeSearchText(raw.trim());
+      const body = table.tBodies[0];
+      const rows = body
+        ? Array.prototype.filter.call(body.rows, function (row) {
+            return row.hasAttribute("data-person-search");
+          })
+        : [];
+      let visible = 0;
+      rows.forEach(function (row) {
+        const matches =
+          !term ||
+          normalizeSearchText(row.getAttribute("data-person-search")).indexOf(term) !== -1;
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      });
+      const total = rows.length;
+      const clear = document.querySelector("[data-grid-search-clear]");
+      if (clear) clear.hidden = !raw;
+      const status = document.querySelector("[data-grid-search-status]");
+      if (status) {
+        status.hidden = !term;
+        status.textContent = term
+          ? "Mostrando " + visible + " de " + total + (total === 1 ? " persona" : " personas")
+          : "";
+      }
+      const empty = document.querySelector("[data-grid-search-empty]");
+      if (empty) {
+        const noMatch = Boolean(term) && total > 0 && visible === 0;
+        empty.hidden = !noMatch;
+        if (noMatch) {
+          const text = empty.querySelector("[data-grid-search-empty-text]");
+          if (text) text.textContent = "No hay personas que coincidan con “" + raw.trim() + "”.";
+        }
+      }
+    }
+    function restoreGridSearch() {
+      let stored = "";
+      try {
+        stored = sessionStorage.getItem(GRID_SEARCH_KEY) || "";
+      } catch (error) {
+        stored = "";
+      }
+      applyGridSearch(stored);
+    }
+    document.body.addEventListener("input", function (event) {
+      const input = event.target.closest("[data-grid-search]");
+      if (!input) return;
+      saveGridSearch(input.value);
+      applyGridSearch(input.value);
+    });
+    document.body.addEventListener("click", function (event) {
+      const clear = event.target.closest("[data-grid-search-clear]");
+      if (!clear) return;
+      saveGridSearch("");
+      applyGridSearch("");
+      const input = document.querySelector("[data-grid-search]");
+      if (input) input.focus();
+    });
+    document.body.addEventListener("keydown", function (event) {
+      const input = document.querySelector("[data-grid-search]");
+      if (!input) return;
+      if (event.key === "Escape") {
+        if (document.activeElement !== input) return;
+        saveGridSearch("");
+        applyGridSearch("");
+        input.blur();
+        return;
+      }
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      const tag = target && target.tagName ? target.tagName : "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) {
+        return;
+      }
+      if (document.querySelector("dialog[open]")) return;
+      event.preventDefault();
+      input.focus();
+      input.select();
+    });
     document.body.addEventListener("change", function (event) {
       if (event.target.matches("[data-novelty-kind-select]")) updateNoveltyFields();
       if (event.target.matches("[data-assignment-status-select]")) updateSplitShiftFields();

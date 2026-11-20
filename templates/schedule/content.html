@@ -47,6 +47,11 @@
     {% if not is_current_week %}
       <a class="button button-secondary small-button" href="{% url week_route today_week %}" hx-get="{% url week_route today_week %}" hx-target="#page-content" hx-push-url="true">Hoy</a>
     {% endif %}
+    <label class="sr-only" for="grid-person-search">Buscar persona en la grilla</label>
+    <div class="grid-search">
+      <input id="grid-person-search" class="form-control grid-search-input" type="search" placeholder="Buscar persona  ( / )" autocomplete="off" data-grid-search>
+      <button type="button" class="grid-search-clear" data-grid-search-clear aria-label="Limpiar búsqueda" hidden>×</button>
+    </div>
     <span class="toolbar-spacer"></span>
     <form class="inline-form export-range" method="get" action="{% url 'schedule_export' %}" target="_blank">
       <label class="sr-only" for="export-start">Desde</label>
@@ -84,6 +89,8 @@
     <span class="muted filter-period">{{ week_label }}</span>
   </nav>
 
+  <p class="grid-search-status" data-grid-search-status role="status" hidden></p>
+
   <div class="schedule-wrap schedule-grid-scroll card">
     {% if not has_people %}
       <div class="empty-state"><h2>No hay personas todavía</h2><p>Agrega personas antes de planificar los turnos.</p><a class="button button-primary" href="{% url 'people' %}">Ir a Personas</a></div>
@@ -96,7 +103,7 @@
         </tr></thead>
         <tbody>
         {% for row in rows %}
-          <tr>
+          <tr data-person-search="{{ row.person.name }} {{ row.person.dni|default:'' }} {{ row.display_name }}">
             <th scope="row" class="person-name"><span class="avatar" aria-hidden="true">{{ row.person.name|slice:":1"|upper }}</span><span>{{ row.display_name|capitalize }}</span></th>
             {% for cell in row.cells %}
               <td title="{{ row.display_name|capitalize }}"{% if cell.day.is_today %} class="today-column"{% endif %}>
@@ -172,6 +179,10 @@
         {% endfor %}
         </tbody>
       </table>
+      <div class="empty-state grid-search-empty" data-grid-search-empty hidden>
+        <h2>Sin coincidencias</h2>
+        <p data-grid-search-empty-text></p>
+      </div>
     {% endif %}
   </div>
 
