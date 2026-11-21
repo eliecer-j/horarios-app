@@ -1,0 +1,46 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Ingresar · Turnos</title>
+  <link rel="stylesheet" href="{% static 'schedule/styles.css' %}">
+  <script>
+    (function () {
+      var theme = "light";
+      try { theme = localStorage.getItem("turnos-theme") === "dark" ? "dark" : "light"; } catch (e) {}
+      document.documentElement.classList.toggle("dark", theme === "dark");
+    })();
+  </script>
+</head>
+<body>
+  <main class="login-shell">
+    <section class="unlock-wrap">
+      <div class="card unlock-card">
+        <span class="brand-mark" aria-hidden="true">T</span>
+        <p class="eyebrow">Acceso</p>
+        <h1>Ingresar</h1>
+        <p class="muted">Escribe tu usuario y contraseña para continuar.</p>
+        {% if form.errors %}
+          <div class="notice notice-warning" role="alert">Usuario o contraseña incorrectos.</div>
+        {% endif %}
+        <form method="post" action="{% url 'login' %}">
+          {% csrf_token %}
+          {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+          <div class="form-field">
+            <label for="id_username">Usuario</label>
+            <input class="form-control" type="text" name="username" id="id_username" autocomplete="username" autofocus required>
+          </div>
+          <div class="form-field">
+            <label for="id_password">Contraseña</label>
+            <input class="form-control" type="password" name="password" id="id_password" autocomplete="current-password" required>
+          </div>
+          <button class="button button-primary full-width" type="submit">Ingresar</button>
+        </form>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

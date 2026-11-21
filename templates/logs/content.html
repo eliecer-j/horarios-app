@@ -11,6 +11,13 @@
         {% for option in person_options %}<option value="{{ option }}"{% if option == person_filter %} selected{% endif %}>{{ option }}</option>{% endfor %}
       </select>
     </label>
+    <label class="form-field"><span>Usuario</span>
+      <select class="form-control" name="user">
+        <option value="">Todos</option>
+        {% for option in user_options %}<option value="{{ option }}"{% if option == user_filter %} selected{% endif %}>{{ option }}</option>{% endfor %}
+        <option value="__none__"{% if user_filter == '__none__' %} selected{% endif %}>Sin usuario</option>
+      </select>
+    </label>
     <div class="logs-toolbar-actions">
       <button class="button button-secondary" type="submit">Filtrar</button>
       {% if has_filters %}<a class="button button-ghost" href="{% url 'logs' %}" hx-get="{% url 'logs' %}" hx-target="#page-content">Limpiar</a>{% endif %}
@@ -19,17 +26,18 @@
   <div class="schedule-wrap card">
     <table class="data-table logs-table">
       <caption class="sr-only">Historial de cambios</caption>
-      <thead><tr><th scope="col">Fecha y hora</th><th scope="col">IP</th><th scope="col">Acción</th><th scope="col">Detalles</th></tr></thead>
+      <thead><tr><th scope="col">Fecha y hora</th><th scope="col">Usuario</th><th scope="col">IP</th><th scope="col">Acción</th><th scope="col">Detalles</th></tr></thead>
       <tbody>
         {% for entry in page_obj %}
           <tr>
             <td>{{ entry.created_at|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ entry.user_label }}</td>
             <td>{{ entry.ip_address|default:"No disponible" }}</td>
             <td>{{ entry.action }}</td>
             <td>{{ entry.details|default:"—" }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="4" class="logs-empty">{% if has_filters %}No hay registros para los filtros seleccionados.{% else %}Aún no hay cambios registrados.{% endif %}</td></tr>
+          <tr><td colspan="5" class="logs-empty">{% if has_filters %}No hay registros para los filtros seleccionados.{% else %}Aún no hay cambios registrados.{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>

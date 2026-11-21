@@ -295,25 +295,10 @@ def name_counts(people):
 
 
 def delete_person(person):
-    with transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute("DELETE FROM assignments WHERE person_id = %s", [person.pk])
-        AssignmentNovelty.objects.filter(person_id=person.pk).delete()
-        VacationPeriod.objects.filter(person_id=person.pk).delete()
-        person.delete()
+    """Borra la persona y sus datos relacionados (limpieza en Person.delete)."""
+    person.delete()
 
 
 def delete_branch(branch):
-    with transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT week_start, person_id, day FROM assignments WHERE branch_id = %s",
-                [branch.pk],
-            )
-            assignment_keys = cursor.fetchall()
-            cursor.execute("DELETE FROM assignments WHERE branch_id = %s", [branch.pk])
-        for week_start, person_id, day in assignment_keys:
-            archive_novelties(AssignmentNovelty.objects.filter(
-                week_start=date.fromisoformat(week_start), person_id=person_id, day=day
-            ))
-        branch.delete()
+    """Borra la sucursal y sus turnos (limpieza en Branch.delete)."""
+    branch.delete()

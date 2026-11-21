@@ -82,7 +82,7 @@
     <label class="sr-only" for="branch-filter">Filtrar por sucursal</label>
     <select id="branch-filter" class="branch-select schedule-branch-select" onchange="htmx.ajax('GET', '{% url week_route week_start|date:'Y-m-d' %}?filter={{ filter_key }}&amp;branch=' + encodeURIComponent(this.value), {target:'#page-content', swap:'innerHTML', pushUrl:true})">
       <option value="">Todas las sucursales</option>
-      {% for branch in branches %}
+      {% for branch in branch_options %}
         <option value="{{ branch.pk }}" {% if branch_filter == branch.pk|stringformat:'s' %}selected{% endif %}>{{ branch.name }}</option>
       {% endfor %}
     </select>

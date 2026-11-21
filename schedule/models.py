@@ -1,4 +1,8 @@
-from django.db import models
+from datetime import date
+
+from django.conf import settings
+from django.db import connection, models, transaction
+from django.utils import timezone
 
 
 class Person(models.Model):
@@ -15,6 +19,18 @@ class Person(models.Model):
 
     def __str__(self):
         return self.name
+
+    def delete(self, *args, **kwargs):
+        """Limpia los datos relacionados antes de borrar a la persona.
+
+        Se ejecuta aunque el borrado venga del administrador de Django.
+        """
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM assignments WHERE person_id = %s", [self.pk])
+            AssignmentNovelty.objects.filter(person_id=self.pk).delete()
+            VacationPeriod.objects.filter(person_id=self.pk).delete()
+            return super().delete(*args, **kwargs)
 
 
 class VacationPeriod(models.Model):
@@ -39,6 +55,7 @@ class VacationPeriod(models.Model):
 class Branch(models.Model):
     name = models.CharField(max_length=200, unique=True)
     color = models.CharField(max_length=7)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         managed = False
@@ -47,6 +64,27 @@ class Branch(models.Model):
 
     def __str__(self):
         return self.name
+
+    def delete(self, *args, **kwargs):
+        """Archiva las novedades y borra los turnos de la sucursal.
+
+        Se ejecuta aunque el borrado venga del administrador de Django.
+        """
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT week_start, person_id, day FROM assignments WHERE branch_id = %s",
+                    [self.pk],
+                )
+                assignment_keys = cursor.fetchall()
+                cursor.execute("DELETE FROM assignments WHERE branch_id = %s", [self.pk])
+            for week_start, person_id, day in assignment_keys:
+                AssignmentNovelty.objects.filter(
+                    week_start=date.fromisoformat(week_start),
+                    person_id=person_id,
+                    day=day,
+                ).filter(archived_at__isnull=True).update(archived_at=timezone.now())
+            return super().delete(*args, **kwargs)
 
 
 class AssignmentNovelty(models.Model):
@@ -85,6 +123,13 @@ class AssignmentNovelty(models.Model):
 
 class AuditLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="audit_logs",
+    )
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     action = models.CharField(max_length=120)
     details = models.TextField(blank=True)
@@ -92,3 +137,9 @@ class AuditLog(models.Model):
     class Meta:
         db_table = "audit_logs"
         ordering = ("-created_at", "-pk")
+
+    @property
+    def user_label(self):
+        if not self.user_id:
+            return "—"
+        return self.user.get_username()

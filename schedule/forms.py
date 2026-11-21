@@ -1,6 +1,8 @@
 import re
 
 from django import forms
+from django.db.models import Q
+
 from .models import AssignmentNovelty, Branch, Person
 
 
@@ -188,9 +190,12 @@ class AssignmentForm(forms.Form):
         }),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, current_branch=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["branch"].queryset = Branch.objects.all()
+        branch_filter = Q(is_active=True)
+        if current_branch:
+            branch_filter |= Q(pk=current_branch)
+        self.fields["branch"].queryset = Branch.objects.filter(branch_filter).order_by("name")
         self.fields["status"].widget.attrs["data-assignment-status-select"] = ""
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
@@ -254,17 +259,6 @@ class AssignmentForm(forms.Form):
                     "La segunda entrada debe ser posterior a la primera salida.",
                 )
         return cleaned
-
-
-class AnalysisPasswordForm(forms.Form):
-    password = forms.CharField(
-        label="Contraseña",
-        widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}),
-    )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["password"].widget.attrs["class"] = "form-control"
 
 
 class LateArrivalForm(forms.Form):

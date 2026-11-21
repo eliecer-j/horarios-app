@@ -55,7 +55,6 @@
           {% else %}
             <form method="post" action="{% url 'person_toggle_active' person.pk %}" hx-post="{% url 'person_toggle_active' person.pk %}" hx-target="#page-content" hx-swap="innerHTML">{% csrf_token %}<button class="button button-secondary small-button" type="submit">Habilitar</button></form>
           {% endif %}
-          <form method="post" action="{% url 'person_delete' person.pk %}" hx-post="{% url 'person_delete' person.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar a {{ person.display_name }} y todos sus turnos?">{% csrf_token %}<button class="button button-ghost danger-text" type="submit">Eliminar</button></form>
         </div>
       </article>
     {% empty %}<div class="empty-state"><h2>{% if query %}No hay coincidencias{% else %}Aún no hay personas{% endif %}</h2><p>Agrega a la primera persona de tu equipo.</p></div>{% endfor %}

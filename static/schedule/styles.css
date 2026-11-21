@@ -232,6 +232,9 @@ button, input, select { font: inherit; }
 .branch-card { min-width: 0; display: flex; align-items: center; gap: 13px; padding: 15px; }
 .branch-icon { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 10px; background: color-mix(in srgb, var(--branch-color) 14%, transparent); color: var(--branch-color); font-size: 20px; }
 .branch-card .row-actions { gap: 0; }
+.branch-card-inactive { background: hsl(var(--muted) / .05); }
+.branch-card-inactive .branch-icon,
+.branch-card-inactive .row-main { opacity: .62; }
 .analysis-toolbar { gap: 12px; padding: 13px; }
 .data-table { min-width: 800px; }
 .data-table th { text-align: left; font-size: 12px; }
@@ -317,6 +320,12 @@ button, input, select { font: inherit; }
 .empty-state h2 { margin: 0 0 5px; font-size: 16px; }
 .empty-state p { margin: 0 0 13px; color: hsl(var(--muted)); }
 .unlock-wrap { min-height: 75vh; display: grid; place-items: center; }
+.login-shell { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.login-shell .unlock-wrap { min-height: 0; }
+.sidebar-user { display: grid; gap: 2px; margin-bottom: 10px; padding: 0 12px; }
+.sidebar-user strong { font-size: 13px; }
+.sidebar-user span { color: hsl(var(--muted)); font-size: 11px; }
+.sidebar-user-form { margin: 0; }
 .unlock-card { width: min(400px, 100%); padding: 25px; }
 .unlock-card .brand-mark { margin-bottom: 20px; }
 .unlock-card .form-field { margin: 18px 0 12px; }

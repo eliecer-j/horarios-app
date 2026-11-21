@@ -1,23 +1,22 @@
 import calendar
-import hmac
 import ipaddress
 from datetime import date, timedelta
 from urllib.parse import urlencode
 
-from django.conf import settings
+from django.contrib.auth.models import User
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.http import Http404, HttpResponse
+from django.http import Http404
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .details import assignment_detail_rows
+from .decorators import app_login_required
 from .exports import fortnight_workbook, workbook_response
-from .forms import AnalysisPasswordForm, AssignmentForm, BranchForm, LateArrivalForm, PersonForm
+from .forms import AssignmentForm, BranchForm, LateArrivalForm, PersonForm
 from .metrics import (
     DAY_SHIFT_END_HOUR,
     DAY_SHIFT_START_HOUR,
@@ -36,8 +35,6 @@ from .services import (
     attach_vacation_ranges,
     available_weeks,
     clear_week,
-    delete_branch,
-    delete_person,
     is_on_vacation,
     monday_of,
     name_counts,
@@ -61,27 +58,13 @@ def _record_change(request, action, details=""):
         ip_address = str(ipaddress.ip_address(remote_addr))
     except (TypeError, ValueError):
         ip_address = None
+    user = request.user if getattr(request, "user", None) and request.user.is_authenticated else None
     AuditLog.objects.create(
+        user=user,
         ip_address=ip_address,
         action=action,
         details=details,
     )
-
-
-def _analysis_unlock_redirect(request):
-    query = urlencode({"next": request.get_full_path()})
-    return redirect(f"{reverse('analysis_unlock')}?{query}")
-
-
-def _analysis_next_url(request):
-    candidate = request.POST.get("next") or request.GET.get("next", "")
-    if url_has_allowed_host_and_scheme(
-        candidate,
-        allowed_hosts={request.get_host()},
-        require_https=request.is_secure(),
-    ):
-        return candidate
-    return reverse("analysis")
 
 
 def render_screen(request, template, context=None, status=200):
@@ -97,8 +80,9 @@ def render_screen(request, template, context=None, status=200):
     return render(request, "base.html", context, status=status)
 
 
-def home(_request):
-    selected_week = _request.GET.get("week")
+@app_login_required
+def home(request):
+    selected_week = request.GET.get("week")
     week_start = _parse_week(selected_week) if selected_week else monday_of(timezone.localdate())
     return redirect("schedule", week_start=week_start.isoformat())
 
@@ -126,6 +110,7 @@ def _schedule_context(
     branch_id = int(branch_filter) if branch_filter.isdigit() else None
     people = attach_vacation_ranges(Person.objects.filter(is_active=True))
     branches = list(Branch.objects.all())
+    branch_options = [branch for branch in branches if branch.is_active]
     assignments = week_assignments(week_start)
     novelties = week_novelties(week_start)
     historical_novelties = week_historical_novelties(week_start)
@@ -223,15 +208,17 @@ def _schedule_context(
         "edit_date": week_start + timedelta(days=edit[1]) if edit else None,
         "edit_form": form,
         "branches": branches,
+        "branch_options": branch_options,
         "message": message,
         "has_people": bool(people),
-        "has_branches": bool(branches),
+        "has_branches": bool(branch_options),
         "today": today,
         "week_route": "schedule",
         "novelties_mode": False,
     }
 
 
+@app_login_required
 def schedule(request, week_start):
     week_start = _parse_week(week_start)
     edit = None
@@ -248,7 +235,7 @@ def schedule(request, week_start):
             current = week_assignments(week_start).get(edit)
             initial = {
                 "status": "work",
-                "branch": Branch.objects.order_by("name").values_list("pk", flat=True).first(),
+                "branch": Branch.objects.filter(is_active=True).order_by("name").values_list("pk", flat=True).first(),
             }
             if current:
                 initial = {
@@ -259,7 +246,10 @@ def schedule(request, week_start):
                     "start_time_2": current["start_time_2"] or "",
                     "end_time_2": current["end_time_2"] or "",
                 }
-            form = AssignmentForm(initial=initial)
+            form = AssignmentForm(
+                initial=initial,
+                current_branch=current["branch_id"] if current else None,
+            )
         except (ValueError, Person.DoesNotExist):
             raise Http404("La asignación solicitada no existe.")
     context = _schedule_context(
@@ -270,14 +260,14 @@ def schedule(request, week_start):
     return render_screen(request, "schedule/content.html", context)
 
 
+@app_login_required
 def novelties(request):
     week_start = monday_of(timezone.localdate())
     return novelties_week(request, week_start.isoformat())
 
 
+@app_login_required
 def novelties_week(request, week_start):
-    if request.session.get("analysis_authenticated") is not True:
-        return _analysis_unlock_redirect(request)
     week_start = _parse_week(week_start)
     edit = None
     form = None
@@ -323,10 +313,9 @@ def novelties_week(request, week_start):
     return render_screen(request, "schedule/content.html", context)
 
 
+@app_login_required
 @require_POST
 def novelty_save(request, week_start, person_id, day):
-    if request.session.get("analysis_authenticated") is not True:
-        return _analysis_unlock_redirect(request)
     week_start = _parse_week(week_start)
     if day not in range(7):
         raise Http404("El día solicitado no es válido.")
@@ -402,10 +391,9 @@ def novelty_save(request, week_start, person_id, day):
     return render_screen(request, "schedule/content.html", context)
 
 
+@app_login_required
 @require_POST
 def novelty_history_delete(request, week_start, person_id, day):
-    if request.session.get("analysis_authenticated") is not True:
-        return _analysis_unlock_redirect(request)
     week_start = _parse_week(week_start)
     if day not in range(7):
         raise Http404("El día solicitado no es válido.")
@@ -471,6 +459,7 @@ def _normalized_assignment(assignment):
     )
 
 
+@app_login_required
 @require_POST
 def assignment_save(request, week_start, person_id, day):
     week_start = _parse_week(week_start)
@@ -478,7 +467,11 @@ def assignment_save(request, week_start, person_id, day):
         raise Http404("El día solicitado no es válido.")
     if not Person.objects.filter(pk=person_id, is_active=True).exists():
         raise Http404("La persona solicitada no existe.")
-    form = AssignmentForm(request.POST)
+    posted_branch = str(request.POST.get("branch", "")).strip()
+    form = AssignmentForm(
+        request.POST,
+        current_branch=int(posted_branch) if posted_branch.isdigit() else None,
+    )
     try:
         if form.is_valid():
             previous = week_assignments(week_start).get((person_id, day))
@@ -562,6 +555,7 @@ def assignment_save(request, week_start, person_id, day):
     )
 
 
+@app_login_required
 @require_POST
 def schedule_clear(request, week_start):
     week_start = _parse_week(week_start)
@@ -573,6 +567,7 @@ def schedule_clear(request, week_start):
     )
 
 
+@app_login_required
 def people(request):
     query = request.GET.get("q", "").strip()
     hide_vacations = (
@@ -678,23 +673,7 @@ def people(request):
     })
 
 
-@require_POST
-def person_delete(request, person_id):
-    try:
-        person = Person.objects.get(pk=person_id)
-    except Person.DoesNotExist as exc:
-        raise Http404("La persona solicitada no existe.") from exc
-    person_name = person.name
-    delete_person(person)
-    _record_change(request, "Persona eliminada", person_name)
-    if request.headers.get("HX-Request") != "true":
-        return redirect("people")
-    request.method = "GET"
-    request.GET = request.GET.copy()
-    request.GET["message"] = "Persona eliminada junto con sus turnos."
-    return people(request)
-
-
+@app_login_required
 @require_POST
 def person_toggle_active(request, person_id):
     try:
@@ -720,6 +699,7 @@ def person_toggle_active(request, person_id):
     return people(request)
 
 
+@app_login_required
 @require_POST
 def vacation_period_delete(request, person_id, period_id):
     try:
@@ -755,6 +735,7 @@ def vacation_period_delete(request, person_id, period_id):
     return people(request)
 
 
+@app_login_required
 def branches(request):
     editing = request.GET.get("edit")
     branch = None
@@ -814,22 +795,33 @@ def branches(request):
         "form": form,
         "message": request.GET.get("message", message),
         "week_label": _week_label(week_start),
+        "active_branches": sum(1 for item in Branch.objects.all() if item.is_active),
+        "inactive_branches": sum(1 for item in Branch.objects.all() if not item.is_active),
     })
 
 
+@app_login_required
 @require_POST
-def branch_delete(request, branch_id):
+def branch_toggle_active(request, branch_id):
     try:
         branch = Branch.objects.get(pk=branch_id)
     except Branch.DoesNotExist as exc:
         raise Http404("La sucursal solicitada no existe.") from exc
-    branch_name = branch.name
-    delete_branch(branch)
-    _record_change(request, "Sucursal eliminada", branch_name)
+    branch.is_active = not branch.is_active
+    branch.save(update_fields=("is_active",))
+    if branch.is_active:
+        _record_change(request, "Sucursal habilitada", branch.name)
+        message = f"{branch.name} vuelve a estar disponible para asignar turnos."
+    else:
+        _record_change(request, "Sucursal deshabilitada", branch.name)
+        message = (
+            f"{branch.name} quedó fuera del selector de turnos. "
+            "Los turnos ya asignados se conservan."
+        )
     if request.headers.get("HX-Request") == "true":
         request.method = "GET"
         request.GET = request.GET.copy()
-        request.GET["message"] = "Sucursal eliminada junto con sus turnos."
+        request.GET["message"] = message
         return branches(request)
     return redirect("branches")
 
@@ -843,21 +835,25 @@ def _parse_log_date(value):
         return None
 
 
+@app_login_required
 def logs(request):
-    if request.session.get("analysis_authenticated") is not True:
-        return _analysis_unlock_redirect(request)
     start_date = _parse_log_date(request.GET.get("start", "").strip())
     end_date = _parse_log_date(request.GET.get("end", "").strip())
     if start_date and end_date and end_date < start_date:
         start_date, end_date = end_date, start_date
     person_filter = request.GET.get("person", "").strip()
-    queryset = AuditLog.objects.all()
+    user_filter = request.GET.get("user", "").strip()
+    queryset = AuditLog.objects.select_related("user")
     if start_date:
         queryset = queryset.filter(created_at__date__gte=start_date)
     if end_date:
         queryset = queryset.filter(created_at__date__lte=end_date)
     if person_filter:
         queryset = queryset.filter(details__startswith=person_filter)
+    if user_filter == "__none__":
+        queryset = queryset.filter(user__isnull=True)
+    elif user_filter:
+        queryset = queryset.filter(user__username=user_filter)
     paginator = Paginator(queryset, 50)
     page_obj = paginator.get_page(request.GET.get("page"))
     filter_query = urlencode({
@@ -866,15 +862,21 @@ def logs(request):
             ("start", start_date.isoformat() if start_date else ""),
             ("end", end_date.isoformat() if end_date else ""),
             ("person", person_filter),
+            ("user", user_filter),
         )
         if value
     })
+    user_options = list(
+        User.objects.order_by("username").values_list("username", flat=True)
+    )
     return render_screen(request, "logs/content.html", {
         "page_obj": page_obj,
         "start_value": start_date.isoformat() if start_date else "",
         "end_value": end_date.isoformat() if end_date else "",
         "person_filter": person_filter,
         "person_options": sorted({person.name for person in Person.objects.all()}),
+        "user_filter": user_filter,
+        "user_options": user_options,
         "has_filters": bool(filter_query),
         "filter_query": filter_query,
     })
@@ -903,9 +905,8 @@ def _analysis_period(request, default_fortnight="current"):
     return year, month, month_value, fortnight, start_date, end_date
 
 
+@app_login_required
 def analysis(request):
-    if request.session.get("analysis_authenticated") is not True:
-        return redirect("analysis_unlock")
     year, month, month_value, fortnight, start_date, end_date = _analysis_period(request)
     people_list = list(Person.objects.filter(is_active=True))
     assignments = assignments_between(start_date, end_date)
@@ -938,9 +939,8 @@ def analysis(request):
     })
 
 
+@app_login_required
 def analysis_person_detail(request, person_id):
-    if request.session.get("analysis_authenticated") is not True:
-        return _analysis_unlock_redirect(request)
     try:
         person = Person.objects.get(pk=person_id, is_active=True)
     except Person.DoesNotExist as exc:
@@ -966,32 +966,6 @@ def analysis_person_detail(request, person_id):
     })
 
 
-def analysis_unlock(request):
-    next_url = _analysis_next_url(request)
-    if request.session.get("analysis_authenticated") is True:
-        return redirect(next_url)
-    form = AnalysisPasswordForm()
-    configuration_error = not settings.ANALYSIS_PASSWORD
-    if request.method == "POST":
-        form = AnalysisPasswordForm(request.POST)
-        if not settings.ANALYSIS_PASSWORD:
-            configuration_error = True
-        elif form.is_valid() and hmac.compare_digest(
-            form.cleaned_data["password"], settings.ANALYSIS_PASSWORD
-        ):
-            request.session["analysis_authenticated"] = True
-            if request.headers.get("HX-Request") == "true":
-                return HttpResponse(status=200, headers={"HX-Redirect": next_url})
-            return redirect(next_url)
-        else:
-            form.add_error("password", "Contraseña incorrecta.")
-    return render_screen(request, "analysis/unlock.html", {
-        "form": form,
-        "configuration_error": configuration_error,
-        "next_url": next_url,
-    })
-
-
 def _parse_export_dates(request):
     try:
         start_date = date.fromisoformat(request.GET.get("start", ""))
@@ -1003,6 +977,7 @@ def _parse_export_dates(request):
     return start_date, end_date
 
 
+@app_login_required
 def schedule_export(request):
     from schedule_export import build_schedule_workbook
 
@@ -1034,9 +1009,8 @@ def schedule_export(request):
     )
 
 
+@app_login_required
 def analysis_export(request):
-    if request.session.get("analysis_authenticated") is not True:
-        return redirect("analysis_unlock")
     _, _, _, _, start_date, end_date = _analysis_period(
         request, default_fortnight="1"
     )

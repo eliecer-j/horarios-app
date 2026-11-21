@@ -1,12 +1,15 @@
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
+from django.contrib import admin as django_admin
+from django.contrib.auth.models import User
 from django.db import connection
-from django.test import TestCase, override_settings
+from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from openpyxl import load_workbook
 
+from .admin import BranchAdmin, PersonAdmin
 from .exports import fortnight_workbook
 from .forms import AssignmentForm, LateArrivalForm
 from .metrics import (
@@ -21,6 +24,9 @@ from .services import assignments_between, clear_week, delete_branch, monday_of,
 from .templatetags.schedule_tags import capitalize, signed_class
 
 
+@override_settings(
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"]
+)
 class LegacyDatabaseViewsTests(TestCase):
     def setUp(self):
         VacationPeriod.objects.all().delete()
@@ -31,6 +37,8 @@ class LegacyDatabaseViewsTests(TestCase):
         self.person = Person.objects.create(name="Ana Torres")
         self.branch = Branch.objects.create(name="Centro", color="#2F6FED")
         self.week_start = monday_of(date.today())
+        self.user = User.objects.create_user("tester", password="test-pass-123")
+        self.client.force_login(self.user)
 
     def test_schedule_page_renders_legacy_data(self):
         with connection.cursor() as cursor:
@@ -161,9 +169,6 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         self.assertContains(pending_response, 'aria-current="true"')
 
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
         logs_response = self.client.get(reverse("logs"))
         self.assertContains(logs_response, "Historial de cambios")
         self.assertContains(logs_response, 'scope="col"')
@@ -392,9 +397,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertIn("Ana Torres", entry.details)
         self.assertIn("Centro", entry.details)
 
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
         logs_response = self.client.get(reverse("logs"))
         self.assertEqual(logs_response.status_code, 200)
         self.assertContains(logs_response, "203.0.113.7")
@@ -450,19 +452,14 @@ class LegacyDatabaseViewsTests(TestCase):
 
         self.assertEqual(AuditLog.objects.count(), 1)
 
-    def test_logs_require_analysis_session(self):
+    def test_logs_require_login(self):
+        self.client.logout()
         response = self.client.get(reverse("logs"))
 
         self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("analysis_unlock"), response["Location"])
-
-    def _unlock_logs(self):
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
+        self.assertIn(reverse("login"), response["Location"])
 
     def test_logs_can_be_filtered_by_date_range_and_person(self):
-        self._unlock_logs()
         january_entry = AuditLog.objects.create(
             ip_address="203.0.113.10",
             action="Turno guardado",
@@ -499,7 +496,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertNotContains(response, "203.0.113.12")
 
     def test_logs_with_invalid_or_inverted_dates_do_not_break(self):
-        self._unlock_logs()
         AuditLog.objects.create(
             ip_address="203.0.113.30",
             action="Turno guardado",
@@ -518,7 +514,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(inverted_response.status_code, 200)
 
     def test_logs_pagination_keeps_active_filters(self):
-        self._unlock_logs()
         for index in range(51):
             AuditLog.objects.create(
                 ip_address="203.0.113.20",
@@ -585,11 +580,6 @@ class LegacyDatabaseViewsTests(TestCase):
                 ],
             )
 
-    def _unlock_analysis(self):
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
-
     def test_disabled_person_is_hidden_from_schedule_and_novelties(self):
         self.person.is_active = False
         self.person.save()
@@ -600,7 +590,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(schedule_response.status_code, 200)
         self.assertNotContains(schedule_response, "Ana Torres")
 
-        self._unlock_analysis()
         novelties_response = self.client.get(
             reverse("novelties_week", args=[self.week_start.isoformat()])
         )
@@ -611,7 +600,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self._insert_shift(self.person)
         self.person.is_active = False
         self.person.save()
-        self._unlock_analysis()
         month = self.week_start.strftime("%Y-%m")
         fortnight = "1" if self.week_start.day <= 15 else "2"
 
@@ -693,7 +681,6 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         self.assertEqual(assignment_response.status_code, 404)
 
-        self._unlock_analysis()
         novelty_response = self.client.post(
             reverse(
                 "novelty_save",
@@ -721,6 +708,62 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Centro")
 
+    def test_logs_record_the_logged_in_username(self):
+        self.client.post(
+            reverse(
+                "assignment_save",
+                args=[self.week_start.isoformat(), self.person.pk, 0],
+            ),
+            {
+                "status": "work",
+                "branch": self.branch.pk,
+                "start_time": "08:00",
+                "end_time": "16:00",
+            },
+        )
+        entry = AuditLog.objects.latest("pk")
+        self.assertEqual(entry.user, self.user)
+
+        response = self.client.get(reverse("logs"))
+        self.assertContains(response, "tester")
+
+    def test_person_delete_route_is_removed(self):
+        with self.assertRaises(NoReverseMatch):
+            reverse("person_delete", args=[self.person.pk])
+
+    def test_branch_delete_route_is_removed(self):
+        with self.assertRaises(NoReverseMatch):
+            reverse("branch_delete", args=[self.branch.pk])
+
+    def test_branch_can_be_disabled_and_is_hidden_from_assignment_choices(self):
+        response = self.client.post(
+            reverse("branch_toggle_active", args=[self.branch.pk])
+        )
+        self.assertEqual(response.status_code, 302)
+        self.branch.refresh_from_db()
+        self.assertFalse(self.branch.is_active)
+
+        page = self.client.get(reverse("branches"))
+        self.assertContains(page, "Deshabilitada")
+
+        form = AssignmentForm()
+        self.assertNotIn(self.branch, form.fields["branch"].queryset)
+
+    def test_branch_can_be_reenabled(self):
+        self.client.post(reverse("branch_toggle_active", args=[self.branch.pk]))
+        self.client.post(reverse("branch_toggle_active", args=[self.branch.pk]))
+        self.branch.refresh_from_db()
+        self.assertTrue(self.branch.is_active)
+
+    def test_htmx_requests_redirect_to_login_when_session_expires(self):
+        self.client.logout()
+        response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()]),
+            HTTP_HX_REQUEST="true",
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertIn(reverse("login"), response["HX-Redirect"])
+
     def test_assignment_editor_renders(self):
         response = self.client.get(
             reverse("schedule", args=[self.week_start.isoformat()]),
@@ -744,7 +787,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertContains(schedule_response, "data-person-search", html=False)
         self.assertContains(schedule_response, "Buscar persona")
 
-        self._unlock_analysis()
         novelties_response = self.client.get(
             reverse("novelties_week", args=[self.week_start.isoformat()])
         )
@@ -857,9 +899,6 @@ class LegacyDatabaseViewsTests(TestCase):
             split_shift_editor, "data-split-shift-field hidden", html=False
         )
 
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
         analysis_response = self.client.get(
             reverse("analysis"),
             {"month": "2026-10", "fortnight": "1"},
@@ -893,11 +932,7 @@ class LegacyDatabaseViewsTests(TestCase):
             "Centro\n10:00–14:00 / 17:00–18:30",
         )
 
-    @override_settings(ANALYSIS_PASSWORD="test-password")
-    def test_analysis_page_renders_after_unlock(self):
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
+    def test_analysis_page_renders_for_logged_in_user(self):
         response = self.client.get(
             reverse("analysis"),
             {"month": self.week_start.strftime("%Y-%m"), "fortnight": "1"},
@@ -918,7 +953,6 @@ class LegacyDatabaseViewsTests(TestCase):
         }
 
     def test_analysis_names_open_the_detail_modal(self):
-        self._unlock_analysis()
         response = self.client.get(reverse("analysis"), self._analysis_params())
 
         self.assertEqual(response.status_code, 200)
@@ -929,18 +963,18 @@ class LegacyDatabaseViewsTests(TestCase):
             reverse("analysis_person_detail", args=[self.person.pk]),
         )
 
-    def test_analysis_person_detail_requires_analysis_session(self):
+    def test_analysis_person_detail_requires_login(self):
+        self.client.logout()
         response = self.client.get(
             reverse("analysis_person_detail", args=[self.person.pk]),
             self._analysis_params(),
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse("analysis_unlock"), response["Location"])
+        self.assertIn(reverse("login"), response["Location"])
 
     def test_analysis_person_detail_shows_day_by_day_rows(self):
         self._insert_shift(self.person)
-        self._unlock_analysis()
 
         response = self.client.get(
             reverse("analysis_person_detail", args=[self.person.pk]),
@@ -960,7 +994,6 @@ class LegacyDatabaseViewsTests(TestCase):
 
     def test_analysis_person_detail_respects_selected_period(self):
         self._insert_shift(self.person)
-        self._unlock_analysis()
 
         response = self.client.get(
             reverse("analysis_person_detail", args=[self.person.pk]),
@@ -978,7 +1011,6 @@ class LegacyDatabaseViewsTests(TestCase):
             {"status": "absent"},
             HTTP_HX_REQUEST="true",
         )
-        self._unlock_analysis()
 
         response = self.client.get(
             reverse("analysis_person_detail", args=[self.person.pk]),
@@ -995,7 +1027,6 @@ class LegacyDatabaseViewsTests(TestCase):
 
     def test_analysis_person_detail_marks_numeric_cells_for_selection(self):
         self._insert_shift(self.person)
-        self._unlock_analysis()
 
         response = self.client.get(
             reverse("analysis_person_detail", args=[self.person.pk]),
@@ -1014,7 +1045,6 @@ class LegacyDatabaseViewsTests(TestCase):
 
     def test_analysis_person_detail_keeps_modal_regions(self):
         self._insert_shift(self.person)
-        self._unlock_analysis()
 
         response = self.client.get(
             reverse("analysis_person_detail", args=[self.person.pk]),
@@ -1052,7 +1082,6 @@ class LegacyDatabaseViewsTests(TestCase):
     def test_analysis_person_detail_rejects_disabled_person(self):
         self.person.is_active = False
         self.person.save()
-        self._unlock_analysis()
 
         response = self.client.get(
             reverse("analysis_person_detail", args=[self.person.pk]),
@@ -1061,53 +1090,61 @@ class LegacyDatabaseViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_novelties_requires_the_analysis_session(self):
+    def test_novelties_requires_login(self):
+        self.client.logout()
         response = self.client.get(
             reverse("novelties_week", args=[self.week_start.isoformat()])
         )
         self.assertEqual(response.status_code, 302)
         self.assertEqual(
             response["Location"],
-            f"{reverse('analysis_unlock')}?next=%2Fnovedades%2F{self.week_start.isoformat()}%2F",
+            f"{reverse('login')}?next=%2Fnovedades%2F{self.week_start.isoformat()}%2F",
         )
 
-    @override_settings(ANALYSIS_PASSWORD="test-password")
-    def test_unlock_returns_to_requested_novelties_grid(self):
+    def test_login_returns_to_requested_novelties_grid(self):
+        self.client.logout()
         target = reverse("novelties_week", args=[self.week_start.isoformat()])
         response = self.client.get(target)
-        unlock_url = response["Location"]
+        login_url = response["Location"]
 
-        unlock_page = self.client.get(unlock_url)
-        self.assertEqual(unlock_page.status_code, 200)
-        self.assertContains(unlock_page, f'name="next" value="{target}"', html=False)
+        login_page = self.client.get(login_url)
+        self.assertEqual(login_page.status_code, 200)
+        self.assertContains(login_page, 'name="next" value="' + target + '"', html=False)
 
         response = self.client.post(
-            unlock_url,
-            {"password": "test-password", "next": target},
+            login_url,
+            {
+                "username": "tester",
+                "password": "test-pass-123",
+                "next": target,
+            },
         )
         self.assertRedirects(response, target, fetch_redirect_response=False)
         grid = self.client.get(target)
         self.assertEqual(grid.status_code, 200)
         self.assertContains(grid, "schedule-grid-scroll")
 
-    @override_settings(ANALYSIS_PASSWORD="test-password")
     def test_htmx_login_requests_full_page_reload_to_novelties(self):
+        self.client.logout()
         target = reverse("novelties_week", args=[self.week_start.isoformat()])
-        unlock_url = f"{reverse('analysis_unlock')}?next=%2Fnovedades%2F{self.week_start.isoformat()}%2F"
 
-        response = self.client.post(
-            unlock_url,
-            {"password": "test-password", "next": target},
-            HTTP_HX_REQUEST="true",
+        response = self.client.get(target, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(
+            response["HX-Redirect"],
+            f"{reverse('login')}?next=%2Fnovedades%2F{self.week_start.isoformat()}%2F",
         )
 
+    def test_login_page_renders(self):
+        self.client.logout()
+        response = self.client.get(reverse("login"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["HX-Redirect"], target)
+        self.assertContains(response, "Ingresar")
+        self.assertContains(response, 'name="username"', html=False)
+        self.assertContains(response, 'name="password"', html=False)
 
     def test_novelties_menu_renders_grid_without_redirect(self):
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         response = self.client.get(reverse("novelties"))
 
@@ -1128,9 +1165,6 @@ class LegacyDatabaseViewsTests(TestCase):
                 "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
                 [self.week_start.isoformat(), self.person.pk, self.branch.pk],
             )
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         page = self.client.get(
             reverse("novelties_week", args=[self.week_start.isoformat()]),
@@ -1193,9 +1227,6 @@ class LegacyDatabaseViewsTests(TestCase):
                     for day in (0, 1)
                 ],
             )
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         for day, kind, observation, badge in (
             (0, AssignmentNovelty.DID_NOT_ATTEND, "No avisó", "No se presentó"),
@@ -1281,9 +1312,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(novelty.actual_start_time.strftime("%H:%M"), "09:30")
         assignments = assignments_between(self.week_start, self.week_start)
         self.assertEqual(assignments[0][5], "09:30")
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         novelties_page = self.client.get(
             reverse("novelties_week", args=[self.week_start.isoformat()])
@@ -1340,9 +1368,6 @@ class LegacyDatabaseViewsTests(TestCase):
             day=0,
             actual_start_time="09:30",
         )
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         response = self.client.post(
             reverse(
@@ -1385,9 +1410,6 @@ class LegacyDatabaseViewsTests(TestCase):
             kind=AssignmentNovelty.CALAMITY,
             observation="Registro equivocado",
         )
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         response = self.client.post(
             reverse(
@@ -1444,6 +1466,72 @@ class LegacyDatabaseViewsTests(TestCase):
         novelty = AssignmentNovelty.objects.get()
         self.assertIsNotNone(novelty.archived_at)
 
+    def test_admin_bulk_delete_person_removes_related_rows(self):
+        VacationPeriod.objects.create(
+            person_id=self.person.pk,
+            start_date=self.week_start,
+            end_date=self.week_start + timedelta(days=2),
+        )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="09:30",
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
+                [self.week_start.isoformat(), self.person.pk, self.branch.pk],
+            )
+
+        request = RequestFactory().post("/admin/schedule/person/")
+        PersonAdmin(Person, django_admin.site).delete_queryset(
+            request, Person.objects.filter(pk=self.person.pk)
+        )
+
+        self.assertFalse(Person.objects.filter(pk=self.person.pk).exists())
+        self.assertFalse(
+            AssignmentNovelty.objects.filter(person_id=self.person.pk).exists()
+        )
+        self.assertFalse(
+            VacationPeriod.objects.filter(person_id=self.person.pk).exists()
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM assignments WHERE person_id = %s",
+                [self.person.pk],
+            )
+            self.assertEqual(cursor.fetchone()[0], 0)
+
+    def test_admin_bulk_delete_branch_archives_novelties_and_removes_assignments(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO assignments (week_start, person_id, day, branch_id, start_time, end_time, assignment_type) "
+                "VALUES (%s, %s, 0, %s, '08:00', '16:00', 'work')",
+                [self.week_start.isoformat(), self.person.pk, self.branch.pk],
+            )
+        AssignmentNovelty.objects.create(
+            week_start=self.week_start,
+            person_id=self.person.pk,
+            day=0,
+            actual_start_time="09:30",
+        )
+
+        request = RequestFactory().post("/admin/schedule/branch/")
+        BranchAdmin(Branch, django_admin.site).delete_queryset(
+            request, Branch.objects.filter(pk=self.branch.pk)
+        )
+
+        self.assertFalse(Branch.objects.filter(pk=self.branch.pk).exists())
+        self.assertIsNotNone(AssignmentNovelty.objects.get().archived_at)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM assignments WHERE branch_id = %s",
+                [self.branch.pk],
+            )
+            self.assertEqual(cursor.fetchone()[0], 0)
+
     def test_history_can_be_deleted_for_one_cell_without_removing_current_novelty(self):
         with connection.cursor() as cursor:
             cursor.execute(
@@ -1464,9 +1552,6 @@ class LegacyDatabaseViewsTests(TestCase):
             day=0,
             actual_start_time="10:00",
         )
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         page = self.client.get(
             reverse("novelties_week", args=[self.week_start.isoformat()])
@@ -1596,9 +1681,6 @@ class LegacyDatabaseViewsTests(TestCase):
             "start_time_2": "17:00",
             "end_time_2": "18:30",
         })
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         novelty_page = self.client.get(
             reverse("novelties_week", args=[week_start.isoformat()]),
@@ -1652,7 +1734,6 @@ class LegacyDatabaseViewsTests(TestCase):
 
     def test_schedule_cell_marks_active_novelty_with_a_dot(self):
         self._insert_shift(self.person)
-        self._unlock_analysis()
         self.client.post(
             reverse(
                 "novelty_save",
@@ -1720,9 +1801,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(schedule_sheet["B3"].value, "Incapacidad")
         self.assertEqual(schedule_sheet["C3"].value, 0)
 
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
         month = self.week_start.strftime("%Y-%m")
         fortnight = "1" if self.week_start.day <= 15 else "2"
         analysis_response = self.client.get(
@@ -1976,9 +2054,6 @@ class LegacyDatabaseViewsTests(TestCase):
         self.assertEqual(metric["nighttime"], 0)
         self.assertAlmostEqual(totals["overtime"], 79 / 60)
 
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
         month = week_start.strftime("%Y-%m")
         fortnight = "1" if week_start.day <= 15 else "2"
         response = self.client.get(
@@ -2041,9 +2116,6 @@ class LegacyDatabaseViewsTests(TestCase):
                     ),
                 ],
             )
-        session = self.client.session
-        session["analysis_authenticated"] = True
-        session.save()
 
         workbook_response = self.client.get(
             reverse("analysis_export"),

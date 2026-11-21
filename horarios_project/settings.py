@@ -76,11 +76,9 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-ANALYSIS_PASSWORD = os.environ.get("ANALYSIS_PASSWORD", "")
 
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "home"
+LOGOUT_REDIRECT_URL = "login"
 
-
-ANALYSIS_PASSWORD = "pao123"
-
-STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
