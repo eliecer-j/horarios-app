@@ -38,6 +38,7 @@
         <div class="sidebar-user">
           <strong>{{ user.get_full_name|default:user.get_username }}</strong>
           {% if user.get_full_name %}<span>{{ user.get_username }}</span>{% endif %}
+          {% if not can_edit %}<span class="readonly-badge">Solo lectura</span>{% endif %}
         </div>
         <form class="sidebar-user-form" method="post" action="{% url 'logout' %}">
           {% csrf_token %}

@@ -1,7 +1,7 @@
 <section class="page-stack">
   <header class="page-header">
     <div><p class="eyebrow">Equipo</p><h1>Personas</h1><p class="muted">{{ active_people }} activas · {{ inactive_people }} deshabilitadas · DNI opcional · Vacaciones</p></div>
-    <a class="button button-primary" href="{% url 'people' %}?new=1" hx-get="{% url 'people' %}?new=1" hx-target="#page-content">＋ Nueva persona</a>
+    {% if can_edit %}<a class="button button-primary" href="{% url 'people' %}?new=1" hx-get="{% url 'people' %}?new=1" hx-target="#page-content">＋ Nueva persona</a>{% endif %}
   </header>
   {% if message %}<div class="notice notice-success" role="status">{{ message }}</div>{% endif %}
   <form class="people-toolbar" method="get" action="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" hx-trigger="input changed delay:250ms from:input[type='search'], change from:input[type='checkbox'], search">
@@ -12,6 +12,7 @@
       <span>Ocultar vacaciones</span>
     </label>
   </form>
+  {% if can_edit %}
   {% if request.GET.new == "1" or editing or form.errors or editing_person %}
     <section id="person-form-card" class="card form-card">
       <div class="section-title"><h2>{% if editing_person %}Editar persona{% else %}Nueva persona{% endif %}</h2><a class="icon-button" href="{% url 'people' %}" hx-get="{% url 'people' %}" hx-target="#page-content" aria-label="Cerrar">×</a></div>
@@ -29,6 +30,7 @@
       </form>
     </section>
   {% endif %}
+  {% endif %}
   <section class="card list-card">
     {% for person in people %}
       <article class="person-row{% if not person.is_active %} person-row-inactive{% endif %}">
@@ -39,15 +41,18 @@
             <div class="vacation-detail-row">
               <p class="vacation-detail">Vacaciones: {{ vacation.start|date:'d/m/Y' }} al {{ vacation.end|date:'d/m/Y' }}</p>
               {% if vacation.pk %}
+                {% if can_edit %}
                 <form method="post" action="{% url 'vacation_period_delete' person.pk vacation.pk %}" hx-post="{% url 'vacation_period_delete' person.pk vacation.pk %}" hx-target="#page-content" hx-swap="innerHTML" hx-confirm="¿Eliminar este periodo de vacaciones?">
                   {% csrf_token %}
                   <button class="button button-ghost danger-text small-button" type="submit">Quitar</button>
                 </form>
+                {% endif %}
               {% endif %}
             </div>
           {% endfor %}
           {% endif %}
         </div>
+        {% if can_edit %}
         <div class="row-actions">
           <a class="button button-secondary small-button" href="{% url 'people' %}?edit={{ person.pk }}" hx-get="{% url 'people' %}?edit={{ person.pk }}" hx-target="#page-content">Editar</a>
           {% if person.is_active %}
@@ -56,6 +61,7 @@
             <form method="post" action="{% url 'person_toggle_active' person.pk %}" hx-post="{% url 'person_toggle_active' person.pk %}" hx-target="#page-content" hx-swap="innerHTML">{% csrf_token %}<button class="button button-secondary small-button" type="submit">Habilitar</button></form>
           {% endif %}
         </div>
+        {% endif %}
       </article>
     {% empty %}<div class="empty-state"><h2>{% if query %}No hay coincidencias{% else %}Aún no hay personas{% endif %}</h2><p>Agrega a la primera persona de tu equipo.</p></div>{% endfor %}
   </section>

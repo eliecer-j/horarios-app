@@ -20,6 +20,11 @@ Aplicación web de gestión de horarios migrada a Django, HTMX y SQLite. La inte
    demás cuentas (Auth → Users). Todos los usuarios acceden a la aplicación
    con su usuario y contraseña.
 
+   Cuentas de solo lectura: agrega al usuario al grupo **Solo lectura**
+   (Auth → Groups) para que pueda ver todo pero no crear ni modificar nada.
+   En ese caso la interfaz oculta los botones y formularios de edición. El
+   superusuario y las cuentas que no estén en el grupo pueden editar.
+
 3. Aplica las migraciones internas de Django e inicia el servidor:
 
    ```powershell

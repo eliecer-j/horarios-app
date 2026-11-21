@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 
 from django.contrib import admin as django_admin
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.db import connection
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
@@ -20,6 +20,7 @@ from .metrics import (
     summarize_period,
 )
 from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
+from .permissions import READONLY_GROUP, user_can_edit
 from .services import assignments_between, clear_week, delete_branch, monday_of, week_assignments
 from .templatetags.schedule_tags import capitalize, signed_class
 
@@ -763,6 +764,86 @@ class LegacyDatabaseViewsTests(TestCase):
         )
         self.assertEqual(response.status_code, 204)
         self.assertIn(reverse("login"), response["HX-Redirect"])
+
+    def _readonly_user(self, username="solo_lectura"):
+        group, _ = Group.objects.get_or_create(name=READONLY_GROUP)
+        user = User.objects.create_user(username, password="test-pass-123")
+        user.groups.add(group)
+        return user
+
+    def test_readonly_group_restricts_editing(self):
+        readonly = self._readonly_user()
+        self.assertTrue(readonly.groups.filter(name=READONLY_GROUP).exists())
+        self.assertFalse(user_can_edit(readonly))
+        self.assertTrue(user_can_edit(self.user))
+
+    def test_readonly_user_can_view_all_screens(self):
+        self.client.force_login(self._readonly_user())
+        for name, args in (
+            ("schedule", [self.week_start.isoformat()]),
+            ("people", []),
+            ("branches", []),
+            ("analysis", []),
+            ("novelties_week", [self.week_start.isoformat()]),
+            ("logs", []),
+        ):
+            response = self.client.get(reverse(name, args=args))
+            self.assertEqual(response.status_code, 200, name)
+
+    def test_readonly_user_is_blocked_from_write_endpoints(self):
+        self.client.force_login(self._readonly_user())
+        cases = (
+            (reverse("assignment_save", args=[self.week_start.isoformat(), self.person.pk, 0]), {"status": "rest"}),
+            (reverse("schedule_clear", args=[self.week_start.isoformat()]), {}),
+            (reverse("novelty_save", args=[self.week_start.isoformat(), self.person.pk, 0]), {"kind": "late_arrival", "actual_start_time": "08:30"}),
+            (reverse("novelty_history_delete", args=[self.week_start.isoformat(), self.person.pk, 0]), {}),
+            (reverse("person_toggle_active", args=[self.person.pk]), {}),
+            (reverse("vacation_period_delete", args=[self.person.pk, 1]), {}),
+            (reverse("branch_toggle_active", args=[self.branch.pk]), {}),
+            (reverse("people"), {"name": "Nueva", "dni": ""}),
+            (reverse("branches"), {"name": "Sucursal", "color": "#2F6FED"}),
+        )
+        for url, payload in cases:
+            response = self.client.post(url, payload)
+            self.assertEqual(response.status_code, 403, url)
+
+    def test_readonly_user_cannot_open_the_editors(self):
+        self.client.force_login(self._readonly_user())
+
+        schedule_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()]),
+            {"edit": f"{self.person.pk}-0"},
+        )
+        self.assertNotContains(schedule_response, 'id="assignment-dialog"')
+
+        people_response = self.client.get(reverse("people"), {"new": "1"})
+        self.assertNotContains(people_response, 'id="person-form-card"')
+
+        branches_response = self.client.get(reverse("branches"), {"new": "1"})
+        self.assertNotContains(branches_response, "Guardar sucursal")
+
+    def test_readonly_user_sees_no_edit_controls(self):
+        self.client.force_login(self._readonly_user())
+
+        people_response = self.client.get(reverse("people"))
+        self.assertNotContains(people_response, "Nueva persona")
+        self.assertNotContains(people_response, "Deshabilitar")
+
+        branches_response = self.client.get(reverse("branches"))
+        self.assertNotContains(branches_response, "Nueva sucursal")
+
+        schedule_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertNotContains(schedule_response, "?edit=")
+        self.assertContains(schedule_response, "Solo lectura")
+
+    def test_editor_still_sees_edit_controls(self):
+        schedule_response = self.client.get(
+            reverse("schedule", args=[self.week_start.isoformat()])
+        )
+        self.assertContains(schedule_response, "?edit=")
+        self.assertNotContains(schedule_response, "Solo lectura")
 
     def test_assignment_editor_renders(self):
         response = self.client.get(

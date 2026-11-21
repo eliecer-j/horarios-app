@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.http import Http404
+from django.http import Http404, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -29,6 +29,7 @@ from .metrics import (
     summarize_period,
 )
 from .models import AssignmentNovelty, AuditLog, Branch, Person, VacationPeriod
+from .permissions import READONLY_MESSAGE, edit_required, user_can_edit
 from .services import (
     assignments_between,
     archive_novelties,
@@ -223,7 +224,7 @@ def schedule(request, week_start):
     week_start = _parse_week(week_start)
     edit = None
     form = None
-    edit_value = request.GET.get("edit", "")
+    edit_value = request.GET.get("edit", "") if user_can_edit(request.user) else ""
     if edit_value:
         try:
             person_id, day = map(int, edit_value.split("-", 1))
@@ -271,7 +272,7 @@ def novelties_week(request, week_start):
     week_start = _parse_week(week_start)
     edit = None
     form = None
-    edit_value = request.GET.get("edit", "")
+    edit_value = request.GET.get("edit", "") if user_can_edit(request.user) else ""
     if edit_value:
         try:
             person_id, day = map(int, edit_value.split("-", 1))
@@ -314,6 +315,7 @@ def novelties_week(request, week_start):
 
 
 @app_login_required
+@edit_required
 @require_POST
 def novelty_save(request, week_start, person_id, day):
     week_start = _parse_week(week_start)
@@ -392,6 +394,7 @@ def novelty_save(request, week_start, person_id, day):
 
 
 @app_login_required
+@edit_required
 @require_POST
 def novelty_history_delete(request, week_start, person_id, day):
     week_start = _parse_week(week_start)
@@ -460,6 +463,7 @@ def _normalized_assignment(assignment):
 
 
 @app_login_required
+@edit_required
 @require_POST
 def assignment_save(request, week_start, person_id, day):
     week_start = _parse_week(week_start)
@@ -556,6 +560,7 @@ def assignment_save(request, week_start, person_id, day):
 
 
 @app_login_required
+@edit_required
 @require_POST
 def schedule_clear(request, week_start):
     week_start = _parse_week(week_start)
@@ -569,12 +574,13 @@ def schedule_clear(request, week_start):
 
 @app_login_required
 def people(request):
+    can_edit = user_can_edit(request.user)
     query = request.GET.get("q", "").strip()
     hide_vacations = (
         "hide_vacations" not in request.GET
         or "1" in request.GET.getlist("hide_vacations")
     )
-    editing = request.GET.get("edit")
+    editing = request.GET.get("edit") if can_edit else None
     person = None
     if editing:
         try:
@@ -584,6 +590,8 @@ def people(request):
     form = PersonForm(person=person)
     message = request.GET.get("message", "")
     if request.method == "POST":
+        if not can_edit:
+            return HttpResponseForbidden(READONLY_MESSAGE)
         person_id = request.POST.get("person_id", "").strip()
         if person_id:
             try:
@@ -674,6 +682,7 @@ def people(request):
 
 
 @app_login_required
+@edit_required
 @require_POST
 def person_toggle_active(request, person_id):
     try:
@@ -700,6 +709,7 @@ def person_toggle_active(request, person_id):
 
 
 @app_login_required
+@edit_required
 @require_POST
 def vacation_period_delete(request, person_id, period_id):
     try:
@@ -737,7 +747,8 @@ def vacation_period_delete(request, person_id, period_id):
 
 @app_login_required
 def branches(request):
-    editing = request.GET.get("edit")
+    can_edit = user_can_edit(request.user)
+    editing = request.GET.get("edit") if can_edit else None
     branch = None
     if editing:
         try:
@@ -747,6 +758,8 @@ def branches(request):
     form = BranchForm(branch=branch)
     message = ""
     if request.method == "POST":
+        if not can_edit:
+            return HttpResponseForbidden(READONLY_MESSAGE)
         branch_id = request.POST.get("branch_id", "").strip()
         if branch_id:
             try:
@@ -801,6 +814,7 @@ def branches(request):
 
 
 @app_login_required
+@edit_required
 @require_POST
 def branch_toggle_active(request, branch_id):
     try:
